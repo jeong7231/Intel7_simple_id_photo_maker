@@ -204,8 +204,8 @@ int main(int argc, char **argv)
     fs::create_directories("./result");
 
     // 수트/가이드 경로 설정
-    string suitPath = (argc >= 2) ? argv[1] : "./image/man_suit_bg_remove_3.png";
-    string guidePath = (argc >= 3) ? argv[2] : "./image/man_suit_bg_remove_3.png";
+    string suitPath = (argc >= 2) ? argv[1] : "./image/man_suit_bg_remove.png";
+    string guidePath = (argc >= 3) ? argv[2] : "./image/man_suit_bg_remove.png";
 
     // 수트 PNG 로드 (RGBA 보장)
     Mat suitRGBA = imread(suitPath, IMREAD_UNCHANGED);
