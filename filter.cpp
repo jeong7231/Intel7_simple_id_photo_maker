@@ -1,7 +1,6 @@
 #include <opencv2/opencv.hpp>
 #include <iostream>
-#include <fstream> // Added for file operations
-#include <vector>  // Added for buffer
+#include <algorithm>
 
 using namespace cv;
 using namespace std;
@@ -21,88 +20,139 @@ int eye_squeeze = 0;
 // 캐스케이드 분류기
 CascadeClassifier face_cascade, eye_cascade;
 
+// 유틸: Mat 크기 유효성 검사
+bool isValidSize(const Mat& m, int maxSize = 5000) {
+    if (m.empty()) return false;
+    if (m.cols <= 0 || m.rows <= 0) return false;
+    if (m.cols > maxSize || m.rows > maxSize) return false;
+    return true;
+}
+
+// 유틸: 안전한 Rect 생성
+Rect safeRect(int x, int y, int w, int h, int maxW, int maxH) {
+    if (w <= 0 || h <= 0) return Rect();
+    if (x < -1000000 || y < -1000000 || x > 1000000 || y > 1000000) return Rect();
+    Rect r(x, y, w, h);
+    Rect bounds(0, 0, maxW, maxH);
+    r &= bounds;
+    if (r.width <= 0 || r.height <= 0) return Rect();
+    return r;
+}
+
 // 이미지 선명도 보정
 void sharpen(Mat& image, int strength) {
     if (strength <= 0 || image.empty()) return;
+    if (!isValidSize(image, 3000)) return;
 
     Size original_size = image.size();
-    if (original_size.width <= 0 || original_size.height <= 0 ||
-        original_size.width > 10000 || original_size.height > 10000) return;
-
-    // Check for potential overflow before multiplication
-    if (original_size.width > INT_MAX / 2 || original_size.height > INT_MAX / 2) {
-        std::cerr << "Warning: Image dimensions too large for sharpening, potential overflow. Skipping." << std::endl;
-        return;
-    }
-
     int new_width = original_size.width * 2;
     int new_height = original_size.height * 2;
-    if (new_width > 3000 || new_height > 3000) return;
+
+    const int UPSCALE_LIMIT = 1500;
+    if (new_width > UPSCALE_LIMIT || new_height > UPSCALE_LIMIT) return;
 
     Mat upscaled;
     resize(image, upscaled, Size(new_width, new_height), 0, 0, INTER_CUBIC);
+
     Mat blurred;
     GaussianBlur(upscaled, blurred, Size(0, 0), 3);
+
     float amount = strength / 10.0f;
     addWeighted(upscaled, 1.0f + amount, blurred, -amount, 0, upscaled);
+
     resize(upscaled, image, original_size, 0, 0, INTER_AREA);
 }
 
-// 눈 자체 확대
+// 눈 확대
 void correctEyes(Mat& image, Rect roi, float squeeze_factor) {
     if (squeeze_factor <= 0 || image.empty()) return;
 
-    Rect upper_face_roi(roi.x, roi.y, roi.width, roi.height / 2);
+    Rect safe_face = safeRect(roi.x, roi.y, roi.width, roi.height, image.cols, image.rows);
+    if (safe_face.empty()) return;
+
+    Rect upper_face_roi(safe_face.x, safe_face.y, safe_face.width, max(1, safe_face.height / 2));
     if (upper_face_roi.width <= 0 || upper_face_roi.height <= 0) return;
+
+    Mat roi_img = image(upper_face_roi);
+    if (roi_img.empty()) return;
 
     vector<Rect> eyes;
     Mat gray;
-    cvtColor(image(upper_face_roi), gray, COLOR_BGR2GRAY);
+    cvtColor(roi_img, gray, COLOR_BGR2GRAY);
     eye_cascade.detectMultiScale(gray, eyes, 1.1, 3, 0, Size(25, 25));
     if (eyes.size() != 2) return;
 
-    for (const auto& eye_roi : eyes) {
-        Mat eye = image(upper_face_roi)(eye_roi).clone();
+    for (const auto& eye_roi_raw : eyes) {
+        Rect eye_roi = safeRect(eye_roi_raw.x, eye_roi_raw.y, eye_roi_raw.width, eye_roi_raw.height,
+                                upper_face_roi.width, upper_face_roi.height);
+        if (eye_roi.empty()) continue;
+
+        Mat eye = roi_img(eye_roi).clone();
         if (eye.empty()) continue;
 
         float scale = min(1.0f + squeeze_factor * 0.5f, 1.5f);
         int new_width = min(static_cast<int>(eye.cols * scale), 300);
         int new_height = min(static_cast<int>(eye.rows * scale), 300);
-        if (new_width <= 0 || new_height <= 0) continue;
 
         Mat enlarged_eye;
         resize(eye, enlarged_eye, Size(new_width, new_height), 0, 0, INTER_CUBIC);
 
         Point center(eye_roi.x + eye_roi.width / 2, eye_roi.y + eye_roi.height / 2);
-        Rect target(center.x - new_width / 2, center.y - new_height / 2, new_width, new_height);
-        target &= Rect(0, 0, upper_face_roi.width, upper_face_roi.height);
-        if (target.width <= 0 || target.height <= 0) continue;
+        int tx = center.x - new_width / 2;
+        int ty = center.y - new_height / 2;
+        Rect target = safeRect(tx, ty, new_width, new_height, upper_face_roi.width, upper_face_roi.height);
+        if (target.empty()) continue;
 
         Mat mask = Mat::zeros(enlarged_eye.size(), CV_8UC1);
         circle(mask, Point(mask.cols / 2, mask.rows / 2), min(mask.cols, mask.rows) / 2, Scalar(255), -1);
         GaussianBlur(mask, mask, Size(15, 15), 5);
 
-        Mat roi_area = image(upper_face_roi)(target);
+        Mat roi_area = roi_img(target);
+        if (roi_area.empty()) continue;
+
+        Mat resized_enlarged, resized_mask;
+        if (enlarged_eye.size() != roi_area.size()) {
+            resize(enlarged_eye, resized_enlarged, roi_area.size(), 0, 0, INTER_CUBIC);
+            resize(mask, resized_mask, roi_area.size(), 0, 0, INTER_LINEAR);
+        } else {
+            resized_enlarged = enlarged_eye;
+            resized_mask = mask;
+        }
+
         Mat blended;
         roi_area.copyTo(blended);
-        enlarged_eye.copyTo(blended, mask);
-        blended.copyTo(image(upper_face_roi)(target));
+        resized_enlarged.copyTo(blended, resized_mask);
+        blended.copyTo(roi_img(target));
     }
+
+    roi_img.copyTo(image(upper_face_roi));
 }
 
-// 잡티 복구
+// 잡티 제거
 void applySmoothSpot(Mat& image, const Point& center, int radius) {
     if (image.empty()) return;
-    Rect roi(center.x - radius, center.y - radius, 2 * radius, 2 * radius);
-    roi &= Rect(0, 0, image.cols, image.rows);
-    if (roi.area() == 0) return;
+    if (!isValidSize(image, 5000)) return;
+    if (radius <= 0 || radius > 200) return;
+
+    Rect roi = safeRect(center.x - radius, center.y - radius, 2 * radius, 2 * radius, image.cols, image.rows);
+    if (roi.empty()) return;
+
+    // ROI 크기 제한 (안전)
+    if (roi.width > 200 || roi.height > 200) {
+        cerr << "[applySmoothSpot] ROI too big: " << roi.width << "x" << roi.height << endl;
+        return;
+    }
 
     Mat roi_image = image(roi);
+    if (roi_image.empty()) return;
+
     Mat smoothed;
     bilateralFilter(roi_image, smoothed, 9, 75, 75);
 
     Mat mask = Mat::zeros(roi.size(), CV_8UC1);
-    circle(mask, Point(radius, radius), radius, Scalar(255), -1);
+    circle(mask, Point(roi.width / 2, roi.height / 2), min(roi.width, roi.height) / 2, Scalar(255), -1);
+    GaussianBlur(mask, mask, Size(15, 15), 5);
+
     smoothed.copyTo(roi_image, mask);
 }
 
@@ -113,28 +163,32 @@ void on_trackbar(int, void*) {
     Mat current = spot_smoothed_image.clone();
     if (face_roi.width <= 0 || face_roi.height <= 0) return;
 
-    Mat face_area = current(face_roi);
-    if (face_area.empty()) return;
+    Rect safe_face = safeRect(face_roi.x, face_roi.y, face_roi.width, face_roi.height, current.cols, current.rows);
+    if (safe_face.empty()) return;
 
+    Mat face_area = current(safe_face);
     if (sharpen_strength > 0) sharpen(face_area, sharpen_strength);
 
     float factor = eye_squeeze / 100.0f;
-    if (factor > 0) correctEyes(current, face_roi, factor);
+    if (factor > 0) correctEyes(current, safe_face, factor);
 
     if (bw_on > 0) {
         cvtColor(current, current, COLOR_BGR2GRAY);
         cvtColor(current, current, COLOR_GRAY2BGR);
     }
 
-    if (original_image.empty() || current.empty()) return;
-
     Mat combined;
-    hconcat(original_image, current, combined);
-    if (combined.empty()) return;
+    try {
+        hconcat(original_image, current, combined);
+    } catch (const cv::Exception& e) {
+        cerr << "[on_trackbar] hconcat failed: " << e.what() << endl;
+        return;
+    }
 
     const int MAX_WIDTH = 1600;
     if (combined.cols > MAX_WIDTH) {
         display_ratio = (double)MAX_WIDTH / combined.cols;
+        if (display_ratio <= 0 || display_ratio > 1.0) display_ratio = 1.0;
         resize(combined, combined, Size(), display_ratio, display_ratio, INTER_AREA);
     } else {
         display_ratio = 1.0;
@@ -146,11 +200,15 @@ void on_trackbar(int, void*) {
 // 마우스 콜백
 void on_mouse(int event, int x, int y, int, void*) {
     if (original_image.empty()) return;
+    if (display_ratio <= 0.0) display_ratio = 1.0; // 방어
 
-    int cx = (int)(x / display_ratio);
-    int cy = (int)(y / display_ratio);
-    cx = max(0, min(cx, original_image.cols - 1));
-    cy = max(0, min(cy, original_image.rows - 1));
+    int cx = static_cast<int>(x / display_ratio);
+    int cy = static_cast<int>(y / display_ratio);
+
+    if (cx < 0 || cy < 0 || cx >= original_image.cols || cy >= original_image.rows) {
+        cerr << "[on_mouse] invalid click (" << cx << "," << cy << ")" << endl;
+        return;
+    }
 
     if (event == EVENT_LBUTTONDOWN) {
         drawing = true;
@@ -162,11 +220,13 @@ void on_mouse(int event, int x, int y, int, void*) {
         int dx = abs(current.x - last_point.x);
         int dy = abs(current.y - last_point.y);
         int steps = max(dx, dy);
+        const int MAX_STEPS = 1000;
+        if (steps > MAX_STEPS) steps = MAX_STEPS;
 
         for (int i = 0; i <= steps; ++i) {
-            float t = (float)i / steps;
-            int x_interp = last_point.x + t * (current.x - last_point.x);
-            int y_interp = last_point.y + t * (current.y - last_point.y);
+            float t = (steps == 0) ? 0.0f : (float)i / steps;
+            int x_interp = static_cast<int>(last_point.x + t * (current.x - last_point.x));
+            int y_interp = static_cast<int>(last_point.y + t * (current.y - last_point.y));
             applySmoothSpot(spot_smoothed_image, Point(x_interp, y_interp), 10);
         }
 
@@ -178,48 +238,13 @@ void on_mouse(int event, int x, int y, int, void*) {
 }
 
 int main() {
-    // 이미지 파일 열기
-    ifstream file("face.jpeg", ios::binary | ios::ate); // ios::ate로 파일 끝으로 이동
-    if (!file.is_open()) {
+    original_image = imread("face.jpeg");
+    if (original_image.empty()) {
         cout << "이미지(face.jpeg)를 불러올 수 없습니다." << endl;
         return -1;
     }
 
-    // 파일 크기 확인
-    streampos file_size = file.tellg();
-    file.seekg(0, ios::beg); // 파일 시작으로 다시 이동
-
-    const streampos MAX_FILE_SIZE_BYTES = 500 * 1024 * 1024; // 500MB 제한 (조정 가능)
-    if (file_size > MAX_FILE_SIZE_BYTES) {
-        cout << "오류: face.jpeg 파일이 너무 큽니다 (" << file_size / (1024 * 1024) << "MB). 최대 "
-             << MAX_FILE_SIZE_BYTES / (1024 * 1024) << "MB 이하의 이미지를 사용해주세요." << endl;
-        return -1;
-    }
-
-    // 파일을 버퍼로 읽어 들입니다.
-    size_t actual_file_size = static_cast<size_t>(file_size); // 명시적으로 size_t로 캐스팅
-    if (actual_file_size == 0) {
-        cout << "오류: face.jpeg 파일이 비어 있습니다." << endl;
-        return -1;
-    }
-    vector<uchar> buffer(actual_file_size);
-    file.read(reinterpret_cast<char*>(buffer.data()), actual_file_size);
-    file.close();
-
-    // 먼저 크기를 줄여서 디코딩을 시도합니다.
-    original_image = imdecode(buffer, IMREAD_COLOR | IMREAD_REDUCED_COLOR_2); // 1/2 크기로 디코딩
-    if (original_image.empty()) {
-        // 크기를 줄인 디코딩이 실패하면, 전체 크기로 디코딩을 시도합니다 (여전히 메모리 부족 오류가 발생할 수 있음).
-        // 하지만 파일 크기 제한으로 인해 이 단계에서 OOM이 발생할 가능성은 줄어듭니다.
-        original_image = imdecode(buffer, IMREAD_COLOR);
-        if (original_image.empty()) {
-            cout << "이미지(face.jpeg)를 디코딩할 수 없습니다." << endl;
-            return -1;
-        }
-    }
-
-    // 초기 크기 축소 디코딩 후에도 여전히 너무 크다면 추가로 크기를 조정합니다.
-    const int MAX_DIMENSION = 1920; // 처리할 최대 이미지 크기
+    const int MAX_DIMENSION = 1000;
     if (original_image.cols > MAX_DIMENSION || original_image.rows > MAX_DIMENSION) {
         double scale = (double)MAX_DIMENSION / max(original_image.cols, original_image.rows);
         resize(original_image, original_image, Size(), scale, scale, INTER_AREA);
@@ -236,31 +261,17 @@ int main() {
     equalizeHist(gray, gray);
     vector<Rect> faces;
     face_cascade.detectMultiScale(gray, faces, 1.1, 5, 0, Size(80, 80));
-    cv::Rect detected_face_rect;
-    if (faces.empty()) {
-        detected_face_rect = Rect(0, 0, original_image.cols, original_image.rows);
+    if (!faces.empty()) {
+        Rect f = faces[0];
+        Rect safe_f = safeRect(f.x, f.y, f.width, f.height, original_image.cols, original_image.rows);
+        face_roi = safe_f.empty() ? Rect(0, 0, original_image.cols, original_image.rows) : safe_f;
     } else {
-        detected_face_rect = faces[0];
-    }
-
-    // Ensure the detected face rectangle is within the bounds of the original_image
-    int x = std::max(0, detected_face_rect.x);
-    int y = std::max(0, detected_face_rect.y);
-    int w = std::min(detected_face_rect.width, original_image.cols - x);
-    int h = std::min(detected_face_rect.height, original_image.rows - y);
-
-    // If the calculated width or height is non-positive, it means the face is invalid or outside the frame.
-    // In this case, default to the entire image or handle as an error.
-    if (w <= 0 || h <= 0) {
-        std::cerr << "Warning: Detected face rectangle is invalid or outside image boundaries. Using full image as ROI." << std::endl;
         face_roi = Rect(0, 0, original_image.cols, original_image.rows);
-    } else {
-        face_roi = Rect(x, y, w, h);
     }
 
     spot_smoothed_image = original_image.clone();
 
-    namedWindow("증명사진 보정");
+    namedWindow("증명사진 보정", WINDOW_AUTOSIZE);
     setMouseCallback("증명사진 보정", on_mouse, NULL);
     createTrackbar("이미지 선명도", "증명사진 보정", &sharpen_strength, 10, on_trackbar);
     createTrackbar("흑백", "증명사진 보정", &bw_on, 1, on_trackbar);
