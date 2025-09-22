@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>PhotoEditPage</class>
+ <widget class="QWidget" name="PhotoEditPage">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>642</width>
+    <height>660</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Form</string>
+  </property>
+  <layout class="QVBoxLayout" name="verticalLayout_2">
+   <item>
+    <layout class="QVBoxLayout" name="verticalLayout" stretch="5,2,0">
+     <item>
+      <widget class="QLabel" name="photoScreen">
+       <property name="text">
+        <string>사진 출력 창</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <layout class="QHBoxLayout" name="horizontalLayout_2" stretch="2,4">
+       <item>
+        <layout class="QVBoxLayout" name="verticalLayout_7">
+         <item>
+          <widget class="QLabel" name="Sharpen_label">
+           <property name="text">
+            <string>선명도</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLabel" name="BW_label">
+           <property name="text">
+            <string>흑백 사진</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLabel" name="spot_removal_label">
+           <property name="text">
+            <string>잡티 제거</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLabel" name="slim_face">
+           <property name="text">
+            <string>턱깍기</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </item>
+       <item>
+        <layout class="QVBoxLayout" name="verticalLayout_6">
+         <item>
+          <widget class="QSlider" name="Sharpen_bar">
+           <property name="orientation">
+            <enum>Qt::Orientation::Horizontal</enum>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QSlider" name="BW_bar">
+           <property name="orientation">
+            <enum>Qt::Orientation::Horizontal</enum>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QSlider" name="spot_removal_bar">
+           <property name="orientation">
+            <enum>Qt::Orientation::Horizontal</enum>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QSlider" name="slim_face_bar">
+           <property name="orientation">
+            <enum>Qt::Orientation::Horizontal</enum>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </item>
+      </layout>
+     </item>
+     <item>
+      <widget class="QPushButton" name="finish_button">
+       <property name="text">
+        <string>편집 완료!</string>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>
