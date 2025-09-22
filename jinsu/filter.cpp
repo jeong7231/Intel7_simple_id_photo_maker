@@ -1,6 +1,7 @@
 #include <opencv2/opencv.hpp>
 #include <iostream>
 #include <algorithm>
+#include <string>
 
 using namespace cv;
 using namespace std;
@@ -15,7 +16,7 @@ double display_ratio = 1.0;
 // 트랙바 변수
 int sharpen_strength = 0;
 int bw_on = 0;
-int eye_squeeze = 0;
+int eye_enlargement_strength = 0;
 
 // 캐스케이드 분류기
 CascadeClassifier face_cascade, eye_cascade;
@@ -31,7 +32,6 @@ bool isValidSize(const Mat& m, int maxSize = 5000) {
 // 유틸: 안전한 Rect 생성
 Rect safeRect(int x, int y, int w, int h, int maxW, int maxH) {
     if (w <= 0 || h <= 0) return Rect();
-    if (x < -1000000 || y < -1000000 || x > 1000000 || y > 1000000) return Rect();
     Rect r(x, y, w, h);
     Rect bounds(0, 0, maxW, maxH);
     r &= bounds;
@@ -45,14 +45,20 @@ void sharpen(Mat& image, int strength) {
     if (!isValidSize(image, 3000)) return;
 
     Size original_size = image.size();
-    int new_width = original_size.width * 2;
-    int new_height = original_size.height * 2;
-
     const int UPSCALE_LIMIT = 1500;
-    if (new_width > UPSCALE_LIMIT || new_height > UPSCALE_LIMIT) return;
 
     Mat upscaled;
-    resize(image, upscaled, Size(new_width, new_height), 0, 0, INTER_CUBIC);
+    double upscale_factor = 2.0;
+    Size new_size(original_size.width * upscale_factor, original_size.height * upscale_factor);
+
+    if (new_size.width > UPSCALE_LIMIT || new_size.height > UPSCALE_LIMIT) {
+        upscale_factor = (double)UPSCALE_LIMIT / max(original_size.width, original_size.height);
+        new_size = Size(original_size.width * upscale_factor, original_size.height * upscale_factor);
+    }
+    
+    if (new_size.width <= 0 || new_size.height <= 0) return;
+
+    resize(image, upscaled, new_size, 0, 0, INTER_CUBIC);
 
     Mat blurred;
     GaussianBlur(upscaled, blurred, Size(0, 0), 3);
@@ -63,14 +69,18 @@ void sharpen(Mat& image, int strength) {
     resize(upscaled, image, original_size, 0, 0, INTER_AREA);
 }
 
-// 눈 확대
-void correctEyes(Mat& image, Rect roi, float squeeze_factor) {
-    if (squeeze_factor <= 0 || image.empty()) return;
+// 눈 영역을 확대하여 블렌딩하는 기능
+void correctEyes(Mat& image, Rect roi, int strength) {
+    if (strength <= 0 || image.empty()) return;
+
+    // 포토샵 효과처럼 더 강력한 확대를 위한 배율
+    float enlargement_factor = strength / 70.0f;
+    if (enlargement_factor <= 0) return;
 
     Rect safe_face = safeRect(roi.x, roi.y, roi.width, roi.height, image.cols, image.rows);
     if (safe_face.empty()) return;
 
-    Rect upper_face_roi(safe_face.x, safe_face.y, safe_face.width, max(1, safe_face.height / 2));
+    Rect upper_face_roi(safe_face.x, safe_face.y, safe_face.width, max(1, safe_face.height * 2 / 3));
     if (upper_face_roi.width <= 0 || upper_face_roi.height <= 0) return;
 
     Mat roi_img = image(upper_face_roi);
@@ -79,53 +89,60 @@ void correctEyes(Mat& image, Rect roi, float squeeze_factor) {
     vector<Rect> eyes;
     Mat gray;
     cvtColor(roi_img, gray, COLOR_BGR2GRAY);
-    eye_cascade.detectMultiScale(gray, eyes, 1.1, 3, 0, Size(25, 25));
+    // 히스토그램 평활화로 대비를 개선하여 눈 감지율을 높임
+    equalizeHist(gray, gray);
+    // 안경 쓴 눈 감지 모델을 고려하여 파라미터 조정
+    eye_cascade.detectMultiScale(gray, eyes, 1.1, 4, 0, Size(20, 20));
+
     if (eyes.size() != 2) return;
+    
+    sort(eyes.begin(), eyes.end(), [](const Rect& a, const Rect& b) {
+        return a.x < b.x;
+    });
+
+    Mat original_roi_img = roi_img.clone();
 
     for (const auto& eye_roi_raw : eyes) {
         Rect eye_roi = safeRect(eye_roi_raw.x, eye_roi_raw.y, eye_roi_raw.width, eye_roi_raw.height,
-                                upper_face_roi.width, upper_face_roi.height);
+                                roi_img.cols, roi_img.rows);
         if (eye_roi.empty()) continue;
 
-        Mat eye = roi_img(eye_roi).clone();
-        if (eye.empty()) continue;
-
-        float scale = min(1.0f + squeeze_factor * 0.5f, 1.5f);
-        int new_width = min(static_cast<int>(eye.cols * scale), 300);
-        int new_height = min(static_cast<int>(eye.rows * scale), 300);
-
-        Mat enlarged_eye;
-        resize(eye, enlarged_eye, Size(new_width, new_height), 0, 0, INTER_CUBIC);
-
+        // 1. ROI를 눈 중심의 정사각형으로 정제
+        int side = min(eye_roi.width, eye_roi.height);
         Point center(eye_roi.x + eye_roi.width / 2, eye_roi.y + eye_roi.height / 2);
-        int tx = center.x - new_width / 2;
-        int ty = center.y - new_height / 2;
-        Rect target = safeRect(tx, ty, new_width, new_height, upper_face_roi.width, upper_face_roi.height);
-        if (target.empty()) continue;
+        Rect square_eye_roi(center.x - side / 2, center.y - side / 2, side, side);
+        square_eye_roi &= Rect(0, 0, roi_img.cols, roi_img.rows);
+        if (square_eye_roi.empty()) continue;
 
+        // 2. 정제된 눈 영역을 잘라냄
+        Mat original_eye_area = original_roi_img(square_eye_roi);
+        if (original_eye_area.empty()) continue;
+
+        // 3. 잘라낸 영역을 확대
+        float scale = 1.0f + enlargement_factor;
+        int new_size = static_cast<int>(side * scale);
+        if (new_size <= side) continue;
+        
+        Mat enlarged_eye;
+        resize(original_eye_area, enlarged_eye, Size(new_size, new_size), 0, 0, INTER_CUBIC);
+
+        // 4. 확대된 이미지를 붙여넣을 위치 계산
+        Rect target_roi(center.x - new_size / 2, center.y - new_size / 2, new_size, new_size);
+        target_roi &= Rect(0, 0, roi_img.cols, roi_img.rows);
+        if (target_roi.empty()) continue;
+
+        // 5. 부드러운 합성을 위한 원형 마스크 생성
         Mat mask = Mat::zeros(enlarged_eye.size(), CV_8UC1);
-        circle(mask, Point(mask.cols / 2, mask.rows / 2), min(mask.cols, mask.rows) / 2, Scalar(255), -1);
-        GaussianBlur(mask, mask, Size(15, 15), 5);
+        circle(mask, Point(mask.cols / 2, mask.rows / 2), mask.cols / 2, Scalar(255), -1);
+        GaussianBlur(mask, mask, Size(21, 21), 10);
 
-        Mat roi_area = roi_img(target);
-        if (roi_area.empty()) continue;
+        // 확대된 이미지와 마스크를 최종 타겟 크기에 맞게 리사이즈
+        resize(enlarged_eye, enlarged_eye, target_roi.size());
+        resize(mask, mask, target_roi.size());
 
-        Mat resized_enlarged, resized_mask;
-        if (enlarged_eye.size() != roi_area.size()) {
-            resize(enlarged_eye, resized_enlarged, roi_area.size(), 0, 0, INTER_CUBIC);
-            resize(mask, resized_mask, roi_area.size(), 0, 0, INTER_LINEAR);
-        } else {
-            resized_enlarged = enlarged_eye;
-            resized_mask = mask;
-        }
-
-        Mat blended;
-        roi_area.copyTo(blended);
-        resized_enlarged.copyTo(blended, resized_mask);
-        blended.copyTo(roi_img(target));
+        // 6. 마스크를 이용해 원본에 합성
+        enlarged_eye.copyTo(roi_img(target_roi), mask);
     }
-
-    roi_img.copyTo(image(upper_face_roi));
 }
 
 // 잡티 제거
@@ -137,7 +154,6 @@ void applySmoothSpot(Mat& image, const Point& center, int radius) {
     Rect roi = safeRect(center.x - radius, center.y - radius, 2 * radius, 2 * radius, image.cols, image.rows);
     if (roi.empty()) return;
 
-    // ROI 크기 제한 (안전)
     if (roi.width > 200 || roi.height > 200) {
         cerr << "[applySmoothSpot] ROI too big: " << roi.width << "x" << roi.height << endl;
         return;
@@ -161,17 +177,21 @@ void on_trackbar(int, void*) {
     if (spot_smoothed_image.empty() || original_image.empty()) return;
 
     Mat current = spot_smoothed_image.clone();
-    if (face_roi.width <= 0 || face_roi.height <= 0) return;
 
+    // 얼굴 ROI를 안전하게 정의
     Rect safe_face = safeRect(face_roi.x, face_roi.y, face_roi.width, face_roi.height, current.cols, current.rows);
-    if (safe_face.empty()) return;
+    if (!safe_face.empty()) {
+        Mat face_area = current(safe_face);
+        // 선명도 보정 적용
+        if (sharpen_strength > 0) sharpen(face_area, sharpen_strength);
+    }
+    
+    // 눈 크기 조절 기능 적용
+    if (eye_enlargement_strength > 0) {
+        correctEyes(current, face_roi, eye_enlargement_strength);
+    }
 
-    Mat face_area = current(safe_face);
-    if (sharpen_strength > 0) sharpen(face_area, sharpen_strength);
-
-    float factor = eye_squeeze / 100.0f;
-    if (factor > 0) correctEyes(current, safe_face, factor);
-
+    // 흑백 변환 적용
     if (bw_on > 0) {
         cvtColor(current, current, COLOR_BGR2GRAY);
         cvtColor(current, current, COLOR_GRAY2BGR);
@@ -200,13 +220,12 @@ void on_trackbar(int, void*) {
 // 마우스 콜백
 void on_mouse(int event, int x, int y, int, void*) {
     if (original_image.empty()) return;
-    if (display_ratio <= 0.0) display_ratio = 1.0; // 방어
+    if (display_ratio <= 0.0) display_ratio = 1.0;
 
     int cx = static_cast<int>(x / display_ratio);
     int cy = static_cast<int>(y / display_ratio);
 
     if (cx < 0 || cy < 0 || cx >= original_image.cols || cy >= original_image.rows) {
-        cerr << "[on_mouse] invalid click (" << cx << "," << cy << ")" << endl;
         return;
     }
 
@@ -238,9 +257,9 @@ void on_mouse(int event, int x, int y, int, void*) {
 }
 
 int main() {
-    original_image = imread("face.jpeg");
+    original_image = imread("/home/ubuntu/opencv/Intel7_simple_id_photo_maker/face.jpeg");
     if (original_image.empty()) {
-        cout << "이미지(face.jpeg)를 불러올 수 없습니다." << endl;
+        cout << "이미지(/home/ubuntu/opencv/Intel7_simple_id_photo_maker/face.jpeg)를 불러올 수 없습니다." << endl;
         return -1;
     }
 
@@ -250,9 +269,9 @@ int main() {
         resize(original_image, original_image, Size(), scale, scale, INTER_AREA);
     }
 
-    if (!face_cascade.load("haarcascade_frontalface_default.xml") ||
-        !eye_cascade.load("haarcascade_eye.xml")) {
-        cout << "분류기를 로드할 수 없습니다." << endl;
+    if (!face_cascade.load("/home/ubuntu/opencv/Intel7_simple_id_photo_maker/haarcascade_frontalface_default.xml") ||
+        !eye_cascade.load("/home/ubuntu/opencv/Intel7_simple_id_photo_maker/haarcascade_eye_tree_eyeglasses.xml")) {
+        cout << "분류기 파일을 찾을 수 없습니다. 경로를 확인해주세요." << endl;
         return -1;
     }
 
@@ -275,7 +294,7 @@ int main() {
     setMouseCallback("증명사진 보정", on_mouse, NULL);
     createTrackbar("이미지 선명도", "증명사진 보정", &sharpen_strength, 10, on_trackbar);
     createTrackbar("흑백", "증명사진 보정", &bw_on, 1, on_trackbar);
-    createTrackbar("눈 크기", "증명사진 보정", &eye_squeeze, 100, on_trackbar);
+    createTrackbar("눈 확대", "증명사진 보정", &eye_enlargement_strength, 10, on_trackbar);
 
     on_trackbar(0, 0);
 
@@ -290,7 +309,10 @@ int main() {
             spot_smoothed_image = original_image.clone();
             sharpen_strength = 0;
             bw_on = 0;
-            eye_squeeze = 0;
+            eye_enlargement_strength = 0;
+            setTrackbarPos("이미지 선명도", "증명사진 보정", sharpen_strength);
+            setTrackbarPos("흑백", "증명사진 보정", bw_on);
+            setTrackbarPos("눈 확대", "증명사진 보정", eye_enlargement_strength);
             on_trackbar(0, 0);
         }
     }
