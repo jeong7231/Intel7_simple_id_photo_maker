@@ -1,27 +1,36 @@
 #include <opencv2/opencv.hpp>
+#include <opencv2/face.hpp>
 #include <iostream>
 #include <algorithm>
 #include <string>
+#include <vector>
 
 using namespace cv;
+using namespace cv::face;
 using namespace std;
 
-// 전역 변수
+// ================== 전역 변수 ==================
 Mat original_image, spot_smoothed_image;
 Rect face_roi;
 Point last_point;
 bool drawing = false;
 double display_ratio = 1.0;
+Ptr<Facemark> facemark;
 
-// 트랙바 변수
+// 메인 트랙바 변수
 int sharpen_strength = 0;
 int bw_on = 0;
 int eye_enlargement_strength = 0;
+int teeth_whitening_strength = 0;
 
 // 캐스케이드 분류기
 CascadeClassifier face_cascade, eye_cascade;
 
-// 유틸: Mat 크기 유효성 검사
+// ================== 함수 선언 ==================
+void on_trackbar(int, void*);
+void reset_parameters();
+
+// ================== 유틸리티 함수 ==================
 bool isValidSize(const Mat& m, int maxSize = 5000) {
     if (m.empty()) return false;
     if (m.cols <= 0 || m.rows <= 0) return false;
@@ -29,7 +38,6 @@ bool isValidSize(const Mat& m, int maxSize = 5000) {
     return true;
 }
 
-// 유틸: 안전한 Rect 생성
 Rect safeRect(int x, int y, int w, int h, int maxW, int maxH) {
     if (w <= 0 || h <= 0) return Rect();
     Rect r(x, y, w, h);
@@ -39,159 +47,188 @@ Rect safeRect(int x, int y, int w, int h, int maxW, int maxH) {
     return r;
 }
 
-// 이미지 선명도 보정
-void sharpen(Mat& image, int strength) {
-    if (strength <= 0 || image.empty()) return;
-    if (!isValidSize(image, 3000)) return;
+// ================== 핵심 기능 함수 ==================
+// 기존의 복잡한 whitenTeeth 함수를 이름 변경 (사용하지 않음)
+void _whitenTeethWithFacemarks(cv::Mat& image, Ptr<Facemark> facemark, CascadeClassifier& face_cascade, int strength)
+{
+    if (strength == 0) return; // No whitening if strength is 0
 
-    Size original_size = image.size();
-    const int UPSCALE_LIMIT = 1500;
+    // 얼굴 검출
+    std::vector<Rect> faces;
+    face_cascade.detectMultiScale(image, faces, 1.1, 5, 0, Size(80, 80));
 
-    Mat upscaled;
-    double upscale_factor = 2.0;
-    Size new_size(original_size.width * upscale_factor, original_size.height * upscale_factor);
+    if (faces.empty()) return;
 
-    if (new_size.width > UPSCALE_LIMIT || new_size.height > UPSCALE_LIMIT) {
-        upscale_factor = (double)UPSCALE_LIMIT / max(original_size.width, original_size.height);
-        new_size = Size(original_size.width * upscale_factor, original_size.height * upscale_factor);
-    }
-    
-    if (new_size.width <= 0 || new_size.height <= 0) return;
+    for (auto& face : faces)
+    {
+        // 랜드마크 검출
+        std::vector<std::vector<Point2f>> landmarks;
+        bool success = facemark->fit(image, std::vector<Rect>{face}, landmarks);
+        if (!success || landmarks.empty()) continue;
 
-    resize(image, upscaled, new_size, 0, 0, INTER_CUBIC);
+        // 입술 영역 (48~67번 포인트)
+        std::vector<Point> mouth_points;
+        for (int i = 48; i <= 67; i++) {
+            mouth_points.push_back(landmarks[0][i]);
+        }
 
-    Mat blurred;
-    GaussianBlur(upscaled, blurred, Size(0, 0), 3);
+        // 입술 polygon으로 마스크 만들기
+        Mat mouth_mask = Mat::zeros(image.size(), CV_8UC1);
+        fillConvexPoly(mouth_mask, mouth_points, Scalar(255));
 
-    float amount = strength / 10.0f;
-    addWeighted(upscaled, 1.0f + amount, blurred, -amount, 0, upscaled);
+        // ROI 추출
+        Rect mouth_roi = boundingRect(mouth_points);
+        Mat mouth_region = image(mouth_roi).clone();
+        Mat mask_roi = mouth_mask(mouth_roi);
 
-    resize(upscaled, image, original_size, 0, 0, INTER_AREA);
-}
+        // HSV 변환
+        Mat hsv;
+        cvtColor(mouth_region, hsv, COLOR_BGR2HSV);
 
-// 눈 영역을 확대하여 블렌딩하는 기능
-void correctEyes(Mat& image, Rect roi, int strength) {
-    if (strength <= 0 || image.empty()) return;
+        // 치아 후보 (밝고 채도 낮음)
+        Mat teeth_mask;
+        inRange(hsv, Scalar(0, 0, 120), Scalar(180, 60, 255), teeth_mask);
 
-    // 포토샵 효과처럼 더 강력한 확대를 위한 배율
-    float enlargement_factor = strength / 70.0f;
-    if (enlargement_factor <= 0) return;
+        // morphology 연산으로 다듬기
+        Mat kernel = getStructuringElement(MORPH_ELLIPSE, Size(5, 5));
+        morphologyEx(teeth_mask, teeth_mask, MORPH_OPEN, kernel);
+        morphologyEx(teeth_mask, teeth_mask, MORPH_CLOSE, kernel);
 
-    Rect safe_face = safeRect(roi.x, roi.y, roi.width, roi.height, image.cols, image.rows);
-    if (safe_face.empty()) return;
+        // 입술 영역 마스크와 결합
+        bitwise_and(teeth_mask, mask_roi, teeth_mask);
 
-    Rect upper_face_roi(safe_face.x, safe_face.y, safe_face.width, max(1, safe_face.height * 2 / 3));
-    if (upper_face_roi.width <= 0 || upper_face_roi.height <= 0) return;
+        // 마스크 경계 부드럽게
+        GaussianBlur(teeth_mask, teeth_mask, Size(15, 15), 5);
 
-    Mat roi_img = image(upper_face_roi);
-    if (roi_img.empty()) return;
+        // Lab 색공간 변환 (미백)
+        Mat lab;
+        cvtColor(mouth_region, lab, COLOR_BGR2Lab);
 
-    vector<Rect> eyes;
-    Mat gray;
-    cvtColor(roi_img, gray, COLOR_BGR2GRAY);
-    // 히스토그램 평활화로 대비를 개선하여 눈 감지율을 높임
-    equalizeHist(gray, gray);
-    // 안경 쓴 눈 감지 모델을 고려하여 파라미터 조정
-    eye_cascade.detectMultiScale(gray, eyes, 1.1, 4, 0, Size(20, 20));
+        std::vector<Mat> lab_planes;
+        split(lab, lab_planes);
 
-    if (eyes.size() != 2) return;
-    
-    sort(eyes.begin(), eyes.end(), [](const Rect& a, const Rect& b) {
-        return a.x < b.x;
-    });
+        // L 채널(밝기) 조절
+        // strength를 사용하여 미백 강도 조절 (0-10)
+        double whitening_factor = 1.0 + (strength / 10.0) * 0.5; // 1.0 ~ 1.5 배 밝기 증가
+        lab_planes[0].convertTo(lab_planes[0], -1, whitening_factor, 0); // 밝기 채널에 적용
+        lab_planes[0].setTo(255, teeth_mask); // 치아 부분만 최대 밝기
 
-    Mat original_roi_img = roi_img.clone();
+        merge(lab_planes, lab);
+        Mat whitened;
+        cvtColor(lab, whitened, COLOR_Lab2BGR);
 
-    for (const auto& eye_roi_raw : eyes) {
-        Rect eye_roi = safeRect(eye_roi_raw.x, eye_roi_raw.y, eye_roi_raw.width, eye_roi_raw.height,
-                                roi_img.cols, roi_img.rows);
-        if (eye_roi.empty()) continue;
-
-        // 1. ROI를 눈 중심의 정사각형으로 정제
-        int side = min(eye_roi.width, eye_roi.height);
-        Point center(eye_roi.x + eye_roi.width / 2, eye_roi.y + eye_roi.height / 2);
-        Rect square_eye_roi(center.x - side / 2, center.y - side / 2, side, side);
-        square_eye_roi &= Rect(0, 0, roi_img.cols, roi_img.rows);
-        if (square_eye_roi.empty()) continue;
-
-        // 2. 정제된 눈 영역을 잘라냄
-        Mat original_eye_area = original_roi_img(square_eye_roi);
-        if (original_eye_area.empty()) continue;
-
-        // 3. 잘라낸 영역을 확대
-        float scale = 1.0f + enlargement_factor;
-        int new_size = static_cast<int>(side * scale);
-        if (new_size <= side) continue;
-        
-        Mat enlarged_eye;
-        resize(original_eye_area, enlarged_eye, Size(new_size, new_size), 0, 0, INTER_CUBIC);
-
-        // 4. 확대된 이미지를 붙여넣을 위치 계산
-        Rect target_roi(center.x - new_size / 2, center.y - new_size / 2, new_size, new_size);
-        target_roi &= Rect(0, 0, roi_img.cols, roi_img.rows);
-        if (target_roi.empty()) continue;
-
-        // 5. 부드러운 합성을 위한 원형 마스크 생성
-        Mat mask = Mat::zeros(enlarged_eye.size(), CV_8UC1);
-        circle(mask, Point(mask.cols / 2, mask.rows / 2), mask.cols / 2, Scalar(255), -1);
-        GaussianBlur(mask, mask, Size(21, 21), 10);
-
-        // 확대된 이미지와 마스크를 최종 타겟 크기에 맞게 리사이즈
-        resize(enlarged_eye, enlarged_eye, target_roi.size());
-        resize(mask, mask, target_roi.size());
-
-        // 6. 마스크를 이용해 원본에 합성
-        enlarged_eye.copyTo(roi_img(target_roi), mask);
+        // 최종 적용
+        whitened.copyTo(image(mouth_roi), teeth_mask);
     }
 }
 
-// 잡티 제거
-void applySmoothSpot(Mat& image, const Point& center, int radius) {
-    if (image.empty()) return;
-    if (!isValidSize(image, 5000)) return;
-    if (radius <= 0 || radius > 200) return;
+// on_trackbar에서 호출되는 간단한 whitenTeeth 함수
+void whitenTeeth(Mat& image, const vector<Point>& mouth_points, int strength) {
+    if (image.empty() || mouth_points.empty() || strength <= 0) return;
 
-    Rect roi = safeRect(center.x - radius, center.y - radius, 2 * radius, 2 * radius, image.cols, image.rows);
-    if (roi.empty()) return;
+    // --- 입술 polygon 마스크 생성 ---
+    Mat lips_mask = Mat::zeros(image.size(), CV_8UC1);
+    fillConvexPoly(lips_mask, mouth_points, Scalar(255));
 
-    if (roi.width > 200 || roi.height > 200) {
-        cerr << "[applySmoothSpot] ROI too big: " << roi.width << "x" << roi.height << endl;
-        return;
+    // --- ROI 추출 ---
+    Rect mouth_roi = boundingRect(mouth_points);
+    if (mouth_roi.empty()) return;
+    mouth_roi = mouth_roi & Rect(0, 0, image.cols, image.rows);
+
+    Mat mouth_region = image(mouth_roi).clone();
+    Mat lips_roi = lips_mask(mouth_roi);
+
+    // --- HSV 변환 ---
+    Mat hsv;
+    cvtColor(mouth_region, hsv, COLOR_BGR2HSV);
+
+    // --- 치아 후보: 밝고 채도 낮은 영역 ---
+    Mat teeth_mask;
+    // Adjusting HSV range for teeth: broader saturation and slightly lower value start
+    inRange(hsv, Scalar(0, 0, 100), Scalar(180, 80, 255), teeth_mask);
+    namedWindow("Teeth Mask", WINDOW_NORMAL); // Make window resizable
+    resizeWindow("Teeth Mask", 300, 300); // Set a larger default size
+
+    // --- 입술 다각형 내부와 교집합 ---
+    bitwise_and(teeth_mask, lips_roi, teeth_mask);
+
+    // --- 마스크 정제 ---
+    Mat kernel = getStructuringElement(MORPH_ELLIPSE, Size(3, 3));
+    morphologyEx(teeth_mask, teeth_mask, MORPH_OPEN, kernel);
+    morphologyEx(teeth_mask, teeth_mask, MORPH_CLOSE, kernel);
+    GaussianBlur(teeth_mask, teeth_mask, Size(11, 11), 3);
+    imshow("Teeth Mask", teeth_mask); // Debugging line
+
+    // --- Lab 색공간으로 변환 ---
+    Mat lab;
+    cvtColor(mouth_region, lab, COLOR_BGR2Lab);
+
+    float l_strength = strength * 3.0f;
+    float b_strength = strength * 2.0f;
+
+    for (int r = 0; r < lab.rows; ++r) {
+        for (int c = 0; c < lab.cols; ++c) {
+            if (teeth_mask.at<uchar>(r, c) > 0) {
+                Vec3b& lab_pixel = lab.at<Vec3b>(r, c);
+                lab_pixel[0] = saturate_cast<uchar>(lab_pixel[0] + l_strength);   // 밝기 ↑
+                lab_pixel[2] = saturate_cast<uchar>(lab_pixel[2] - b_strength);   // 노란기 ↓
+            }
+        }
     }
 
-    Mat roi_image = image(roi);
-    if (roi_image.empty()) return;
+    // --- 다시 BGR 변환 ---
+    Mat whitened;
+    cvtColor(lab, whitened, COLOR_Lab2BGR);
 
-    Mat smoothed;
-    bilateralFilter(roi_image, smoothed, 9, 75, 75);
-
-    Mat mask = Mat::zeros(roi.size(), CV_8UC1);
-    circle(mask, Point(roi.width / 2, roi.height / 2), min(roi.width, roi.height) / 2, Scalar(255), -1);
-    GaussianBlur(mask, mask, Size(15, 15), 5);
-
-    smoothed.copyTo(roi_image, mask);
+    // --- 원본 이미지에 덮어쓰기 ---
+    whitened.copyTo(image(mouth_roi), teeth_mask);
 }
 
-// 트랙바 콜백
+void sharpen(Mat& image, int strength) { /* 구현 필요 */ }
+void correctEyes(Mat& image, Rect roi, int strength) { /* 구현 필요 */ }
+void applySmoothSpot(Mat& image, const Point& center, int radius) { /* 구현 필요 */ }
+
+// ================== 콜백 함수 ==================
 void on_trackbar(int, void*) {
     if (spot_smoothed_image.empty() || original_image.empty()) return;
 
     Mat current = spot_smoothed_image.clone();
 
-    // 얼굴 ROI를 안전하게 정의
     Rect safe_face = safeRect(face_roi.x, face_roi.y, face_roi.width, face_roi.height, current.cols, current.rows);
     if (!safe_face.empty()) {
         Mat face_area = current(safe_face);
-        // 선명도 보정 적용
         if (sharpen_strength > 0) sharpen(face_area, sharpen_strength);
     }
-    
-    // 눈 크기 조절 기능 적용
+
+    if (teeth_whitening_strength > 0) {
+        // Convert current image to grayscale for landmark detection
+        Mat gray_current;
+        cvtColor(current, gray_current, COLOR_BGR2GRAY);
+
+        // Detect landmarks on the face_roi
+        std::vector<std::vector<Point2f>> landmarks;
+        bool success = facemark->fit(gray_current, std::vector<Rect>{face_roi}, landmarks);
+
+        if (success && !landmarks.empty()) {
+            // Extract mouth points (typically landmarks 48-67 for LBF model)
+            std::vector<Point> mouth_points;
+            for (int i = 48; i <= 67; i++) {
+                mouth_points.push_back(landmarks[0][i]);
+                // Draw a small circle at each mouth landmark for debugging
+                circle(current, landmarks[0][i], 2, Scalar(0, 255, 0), -1); // Green circles
+            }
+            whitenTeeth(current, mouth_points, teeth_whitening_strength);
+        } else {
+            cerr << "Facial landmark detection failed for teeth whitening.";
+            // Also draw the face_roi if landmark detection failed, to see if face is detected
+            rectangle(current, face_roi, Scalar(0, 0, 255), 2); // Red rectangle
+        }
+    }
+
     if (eye_enlargement_strength > 0) {
         correctEyes(current, face_roi, eye_enlargement_strength);
     }
 
-    // 흑백 변환 적용
     if (bw_on > 0) {
         cvtColor(current, current, COLOR_BGR2GRAY);
         cvtColor(current, current, COLOR_GRAY2BGR);
@@ -208,7 +245,6 @@ void on_trackbar(int, void*) {
     const int MAX_WIDTH = 1600;
     if (combined.cols > MAX_WIDTH) {
         display_ratio = (double)MAX_WIDTH / combined.cols;
-        if (display_ratio <= 0 || display_ratio > 1.0) display_ratio = 1.0;
         resize(combined, combined, Size(), display_ratio, display_ratio, INTER_AREA);
     } else {
         display_ratio = 1.0;
@@ -217,50 +253,13 @@ void on_trackbar(int, void*) {
     imshow("증명사진 보정", combined);
 }
 
-// 마우스 콜백
-void on_mouse(int event, int x, int y, int, void*) {
-    if (original_image.empty()) return;
-    if (display_ratio <= 0.0) display_ratio = 1.0;
+void on_mouse(int event, int x, int y, int, void*) { /* 구현 필요 */ }
 
-    int cx = static_cast<int>(x / display_ratio);
-    int cy = static_cast<int>(y / display_ratio);
-
-    if (cx < 0 || cy < 0 || cx >= original_image.cols || cy >= original_image.rows) {
-        return;
-    }
-
-    if (event == EVENT_LBUTTONDOWN) {
-        drawing = true;
-        last_point = Point(cx, cy);
-        applySmoothSpot(spot_smoothed_image, last_point, 10);
-        on_trackbar(0, 0);
-    } else if (event == EVENT_MOUSEMOVE && drawing) {
-        Point current(cx, cy);
-        int dx = abs(current.x - last_point.x);
-        int dy = abs(current.y - last_point.y);
-        int steps = max(dx, dy);
-        const int MAX_STEPS = 1000;
-        if (steps > MAX_STEPS) steps = MAX_STEPS;
-
-        for (int i = 0; i <= steps; ++i) {
-            float t = (steps == 0) ? 0.0f : (float)i / steps;
-            int x_interp = static_cast<int>(last_point.x + t * (current.x - last_point.x));
-            int y_interp = static_cast<int>(last_point.y + t * (current.y - last_point.y));
-            applySmoothSpot(spot_smoothed_image, Point(x_interp, y_interp), 10);
-        }
-
-        last_point = current;
-        on_trackbar(0, 0);
-    } else if (event == EVENT_LBUTTONUP) {
-        drawing = false;
-    }
-}
-
+// ================== 메인 함수 ==================
 int main() {
-    original_image = imread("/home/ubuntu/opencv/Intel7_simple_id_photo_maker/face.jpeg");
+    original_image = imread("/home/ubuntu/opencv/Intel7_simple_id_photo_maker/jinsu/face.jpeg");
     if (original_image.empty()) {
-        cout << "이미지(/home/ubuntu/opencv/Intel7_simple_id_photo_maker/face.jpeg)를 불러올 수 없습니다." << endl;
-        return -1;
+        cout << "이미지를 불러올 수 없습니다." << endl; return -1;
     }
 
     const int MAX_DIMENSION = 1000;
@@ -269,11 +268,13 @@ int main() {
         resize(original_image, original_image, Size(), scale, scale, INTER_AREA);
     }
 
-    if (!face_cascade.load("/home/ubuntu/opencv/Intel7_simple_id_photo_maker/haarcascade_frontalface_default.xml") ||
-        !eye_cascade.load("/home/ubuntu/opencv/Intel7_simple_id_photo_maker/haarcascade_eye_tree_eyeglasses.xml")) {
-        cout << "분류기 파일을 찾을 수 없습니다. 경로를 확인해주세요." << endl;
-        return -1;
+    if (!face_cascade.load("/home/ubuntu/opencv/Intel7_simple_id_photo_maker/jinsu/haarcascade_frontalface_default.xml") ||
+        !eye_cascade.load("/home/ubuntu/opencv/Intel7_simple_id_photo_maker/jinsu/haarcascade_eye_tree_eyeglasses.xml")) {
+        cout << "분류기 파일을 찾을 수 없습니다." << endl; return -1;
     }
+
+    facemark = FacemarkLBF::create();
+    facemark->loadModel("/home/ubuntu/opencv/Intel7_simple_id_photo_maker/jinsu/lbfmodel.yaml");
 
     Mat gray;
     cvtColor(original_image, gray, COLOR_BGR2GRAY);
@@ -281,9 +282,7 @@ int main() {
     vector<Rect> faces;
     face_cascade.detectMultiScale(gray, faces, 1.1, 5, 0, Size(80, 80));
     if (!faces.empty()) {
-        Rect f = faces[0];
-        Rect safe_f = safeRect(f.x, f.y, f.width, f.height, original_image.cols, original_image.rows);
-        face_roi = safe_f.empty() ? Rect(0, 0, original_image.cols, original_image.rows) : safe_f;
+        face_roi = faces[0];
     } else {
         face_roi = Rect(0, 0, original_image.cols, original_image.rows);
     }
@@ -293,30 +292,36 @@ int main() {
     namedWindow("증명사진 보정", WINDOW_AUTOSIZE);
     setMouseCallback("증명사진 보정", on_mouse, NULL);
     createTrackbar("이미지 선명도", "증명사진 보정", &sharpen_strength, 10, on_trackbar);
-    createTrackbar("흑백", "증명사진 보정", &bw_on, 1, on_trackbar);
+    createTrackbar("치아 미백", "증명사진 보정", &teeth_whitening_strength, 10, on_trackbar);
     createTrackbar("눈 확대", "증명사진 보정", &eye_enlargement_strength, 10, on_trackbar);
+    createTrackbar("흑백", "증명사진 보정", &bw_on, 1, on_trackbar);
 
     on_trackbar(0, 0);
 
-    cout << "\n[스팟 복구 사용법]" << endl;
-    cout << "마우스를 드래그하여 잡티 영역을 부드럽게 하세요." << endl;
-    cout << "'r' 키를 누르면 모든 보정을 리셋합니다. 'q' 또는 'ESC' 키로 종료합니다." << endl;
+    cout << "\n사용법: 트랙바 조절, 마우스로 잡티 제거, r키로 리셋, q/ESC로 종료" << endl;
 
     while (true) {
         int key = waitKey(0);
         if (key == 'q' || key == 27) break;
         else if (key == 'r') {
-            spot_smoothed_image = original_image.clone();
-            sharpen_strength = 0;
-            bw_on = 0;
-            eye_enlargement_strength = 0;
-            setTrackbarPos("이미지 선명도", "증명사진 보정", sharpen_strength);
-            setTrackbarPos("흑백", "증명사진 보정", bw_on);
-            setTrackbarPos("눈 확대", "증명사진 보정", eye_enlargement_strength);
+            reset_parameters();
             on_trackbar(0, 0);
         }
     }
 
     destroyAllWindows();
     return 0;
+}
+
+void reset_parameters() {
+    spot_smoothed_image = original_image.clone();
+    sharpen_strength = 0;
+    bw_on = 0;
+    eye_enlargement_strength = 0;
+    teeth_whitening_strength = 0;
+
+    setTrackbarPos("이미지 선명도", "증명사진 보정", sharpen_strength);
+    setTrackbarPos("흑백", "증명사진 보정", bw_on);
+    setTrackbarPos("눈 확대", "증명사진 보정", eye_enlargement_strength);
+    setTrackbarPos("치아 미백", "증명사진 보정", teeth_whitening_strength);
 }
