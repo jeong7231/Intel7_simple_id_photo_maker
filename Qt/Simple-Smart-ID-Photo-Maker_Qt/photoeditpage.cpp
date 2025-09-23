@@ -719,3 +719,4 @@ void PhotoEditPage::on_teeth_whiten_4_button_clicked(bool checked)
     }
 }
 
+
