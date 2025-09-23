@@ -4,82 +4,92 @@
 #include <QImage>
 #include <QTimer>
 #include <QDateTime>
+#include <QDir>
 
 main_app::main_app(QWidget *parent)
     : QWidget(parent)
-    , editPage(nullptr)
-    , exportPage(nullptr)
-    , ui(new Ui::main_app)
-    , timer(new QTimer(this))
+      , editPage(nullptr)
+      , exportPage(nullptr)
+      , ui(new Ui::main_app)
+      , timer(new QTimer(this))
 {
     ui->setupUi(this);
 
-    // 카메라 초기화
-    camera.open(0);
+    // 합성 엔진 초기화
+    comp_.setCanvas(300, 400, 290);
+    comp_.loadSuit("../../image/man_suit_bg_remove.png");
+    comp_.loadGuide("../../image/man_suit_bg_remove.png");
+    comp_.setMirror(true);
+    comp_.setGuideVisible(true);
+    comp_.setGuideOpacity(0.7);
 
-    // 타이머 연결
+    // 카메라
+    camera.open(0, cv::CAP_V4L2);
+    if(!camera.isOpened()) camera.open(0, cv::CAP_ANY);
+    if(camera.isOpened()){
+        camera.set(cv::CAP_PROP_FOURCC, cv::VideoWriter::fourcc('M','J','P','G'));
+        camera.set(cv::CAP_PROP_FRAME_WIDTH, 640);
+        camera.set(cv::CAP_PROP_FRAME_HEIGHT, 480);
+    }
+
+    // 타이머
     connect(timer, &QTimer::timeout, this, &main_app::updateFrame);
 
-    // 촬영 버튼 연결
+    // 촬영 버튼
     connect(ui->takePhotoButton, &QPushButton::clicked, this, &main_app::capturePhoto);
 
-    // 카메라 시작
-    if(camera.isOpened()) {
-        timer->start(30); // 30ms마다 프레임 업데이트
-    }
+    if(camera.isOpened()) timer->start(30);
 }
 
 void main_app::updateFrame()
 {
-    cv::Mat frame;
-    camera >> frame;
+    if(!camera.isOpened()) return;
 
-    if(!frame.empty()) {
-        // BGR을 RGB로 변환
-        cv::cvtColor(frame, frame, cv::COLOR_BGR2RGB);
+    camera >> lastFrameBGR_;
+    if(lastFrameBGR_.empty()) return;
 
-        // Mat을 QImage로 변환
-        QImage qimg(frame.data, frame.cols, frame.rows, frame.step,
-                    QImage::Format_RGB888);
+    // 수트 가이드를 포함한 프리뷰(BGR)
+    cv::Mat prevBGR = comp_.makePreviewBGR(lastFrameBGR_);
 
-        // QLabel에 표시
-        ui->camScreen->setPixmap(QPixmap::fromImage(qimg));
-        ui->camScreen->setScaledContents(true);
-    }
+    // Mat(BGR) -> QImage
+    QImage qimg = SuitComposer::matBGR2QImage(prevBGR);
+
+    ui->camScreen->setPixmap(QPixmap::fromImage(qimg));
+    ui->camScreen->setScaledContents(true);
 }
 
 void main_app::capturePhoto()
 {
-    cv::Mat frame;
-    camera >> frame;
-
-    if(!frame.empty()) {
-        //현재 날짜, 시간으로 파일명
-        QString timestamp =
-            QDateTime::currentDateTime().toString("yyyy-MM-dd_hh-mm-ss");
-        currentImagePath = QString("%1.jpg").arg(timestamp);
-        // 직접 currentImagePath에 저장
-            // 사진 저장
-            cv::imwrite(currentImagePath.toStdString(), frame);
-
-        // photoEditPage로 이동
-        if(!editPage) {
-            editPage = new PhotoEditPage();
-            editPage->setMainApp(this);
-        }
-        editPage->loadImage(currentImagePath);
-        editPage->show();
-        this->hide();
+    if(lastFrameBGR_.empty()){
+        if(!camera.isOpened()) return;
+        camera >> lastFrameBGR_;
+        if(lastFrameBGR_.empty()) return;
     }
+
+    // 수트 ⊕ 얼굴 합성 RGBA
+    cv::Mat outRGBA = comp_.composeRGBA(lastFrameBGR_);
+
+    // 저장 경로
+    QDir().mkpath("result");
+    const QString ts = QDateTime::currentDateTime().toString("yyyyMMdd_HHmmss");
+    currentImagePath = QString("result/suit_%1.png").arg(ts);
+
+    // PNG RGBA 저장
+    cv::imwrite(currentImagePath.toStdString(), outRGBA, {cv::IMWRITE_PNG_COMPRESSION, 3});
+
+    // 편집 페이지로 이동
+    if(!editPage) {
+        editPage = new PhotoEditPage();
+        editPage->setMainApp(this);
+    }
+    editPage->loadImage(currentImagePath); // 경로 전달
+    editPage->show();
+    this->hide();
 }
 
 void main_app::goToExportPage()
 {
-    if(!exportPage)
-    {
-        exportPage = new export_page();
-    }
-
+    if(!exportPage) exportPage = new export_page();
     exportPage->show();
     this->hide();
 }
@@ -87,9 +97,7 @@ void main_app::goToExportPage()
 main_app::~main_app()
 {
     camera.release();
-    if(editPage)
-        delete editPage;
-    if(exportPage)
-        delete exportPage;
+    delete editPage;
+    delete exportPage;
     delete ui;
 }

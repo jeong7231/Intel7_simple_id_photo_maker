@@ -6,6 +6,7 @@
 #include <opencv2/opencv.hpp>
 #include "photoeditpage.h"
 #include "export_page.h"
+#include "suitcomposer.h"
 
 QT_BEGIN_NAMESPACE
 namespace Ui {
@@ -16,24 +17,27 @@ QT_END_NAMESPACE
 class main_app : public QWidget
 {
     Q_OBJECT
-
-public:
-    main_app(QWidget *parent = nullptr);
+  public:
+    explicit main_app(QWidget *parent = nullptr);
     ~main_app();
+
     PhotoEditPage *editPage;
     QString currentImagePath;
     export_page *exportPage;
 
-public slots:
+  public slots:
     void goToExportPage();
 
-private slots:
-    void updateFrame();
-    void capturePhoto();
+  private slots:
+    void updateFrame();   // 프리뷰만 갱신
+    void capturePhoto();  // 수트 합성 후 저장
 
-private:
+  private:
     Ui::main_app *ui;
     cv::VideoCapture camera;
     QTimer *timer;
+
+    cv::Mat lastFrameBGR_;   // 최신 원본 프레임
+    SuitComposer comp_;      // 합성 엔진
 };
 #endif // MAIN_APP_H
