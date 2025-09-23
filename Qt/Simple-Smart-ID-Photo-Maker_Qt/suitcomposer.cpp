@@ -52,10 +52,11 @@ bool SuitComposer::loadGuide(const QString& path){
     return true;
 }
 
-/* 미러/가이드 표시/불투명도 설정 */
+/* 미러/가이드 표시/불투명도/배경색 설정 */
 void SuitComposer::setMirror(bool on){ mirror_=on; }
 void SuitComposer::setGuideVisible(bool on){ showGuide_=on; }
 void SuitComposer::setGuideOpacity(double a01){ guideOpacity_=std::clamp(a01,0.0,1.0); }
+void SuitComposer::setBackgroundColor(const cv::Scalar& color){ backgroundColor_=color; }
 
 /* 프리뷰용: 입력 BGR → 미러/리사이즈 → 가이드 오버레이 후 BGR 반환 */
 cv::Mat SuitComposer::makePreviewBGR(const cv::Mat& frameBGR) const{
@@ -117,6 +118,22 @@ cv::Mat SuitComposer::composeRGBA(const cv::Mat& frameBGR){
     // 수트 ⊕ 얼굴 합성(비프리멀티플라이)
     Mat out; alphaOverRGBA(suitRGBA_, faceRGBA, out);
     return out; // 8UC4
+}
+
+/* 배경색이 적용된 BGR 이미지 반환 (투명 배경 대신) */
+cv::Mat SuitComposer::composeBGR(const cv::Mat& frameBGR){
+    // 먼저 RGBA 합성 이미지 생성
+    Mat composedRGBA = composeRGBA(frameBGR);
+    if(composedRGBA.empty()) return Mat();
+
+    // 배경색으로 채워진 BGR 이미지 생성
+    Mat backgroundBGR(composedRGBA.size(), CV_8UC3, backgroundColor_);
+
+    // RGBA를 BGR 배경 위에 오버레이
+    Mat resultBGR = backgroundBGR.clone();
+    overlayRGBA(resultBGR, composedRGBA, 1.0);
+
+    return resultBGR;
 }
 
 /* 비프리멀티플라이 RGBA 오버 연산: out = fg ⊕ bg */

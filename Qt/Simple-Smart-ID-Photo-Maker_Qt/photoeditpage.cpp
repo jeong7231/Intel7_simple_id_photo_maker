@@ -25,8 +25,8 @@ PhotoEditPage::PhotoEditPage(QWidget *parent)
     ui->eye_size_bar->setRange(0, 10);
     ui->eye_size_bar->setValue(0);
 
-    // RGB 배경 초기화
-    createRGBBackground();
+    // 배경색 초기화 (기본 흰색)
+    createBackgroundWithColor(currentBackgroundColor);
 
     // 초기에 배경만 표시
     cv::Mat emptyMat;
@@ -749,15 +749,14 @@ void PhotoEditPage::on_teeth_whiten_4_button_clicked(bool checked)
 }
 
 // ============================================================================
-// RGB 배경 관련 함수들
+// 배경색 관련 함수들
 // ============================================================================
 
-void PhotoEditPage::createRGBBackground()
+void PhotoEditPage::createBackgroundWithColor(const cv::Scalar& color)
 {
-    // 300x400 크기의 RGB 배경 이미지 생성 (OpenCV는 BGR 순서)
-    backgroundImage = cv::Mat(400, 300, CV_8UC3, cv::Scalar(blueValue, greenValue, redValue));
-    qDebug() << "Created RGB background: R=" << redValue << " G=" << greenValue << " B=" << blueValue;
-    qDebug() << "OpenCV BGR values: B=" << blueValue << " G=" << greenValue << " R=" << redValue;
+    // 300x400 크기의 배경 이미지 생성 (OpenCV는 BGR 순서)
+    backgroundImage = cv::Mat(400, 300, CV_8UC3, color);
+    qDebug() << "Created background with color: B=" << color[0] << " G=" << color[1] << " R=" << color[2];
 }
 
 cv::Mat PhotoEditPage::overlayPhotoOnBackground(const cv::Mat& photo, const cv::Mat& background)
@@ -803,11 +802,22 @@ cv::Mat PhotoEditPage::overlayPhotoOnBackground(const cv::Mat& photo, const cv::
     return result;
 }
 
-// RGB 슬라이더 이벤트 핸들러들
-void PhotoEditPage::on_slider_red_valueChanged(int value)
+// 배경색 콤보박스 이벤트 핸들러
+void PhotoEditPage::on_comboBox_background_currentTextChanged(const QString &text)
 {
-    redValue = value;
-    createRGBBackground();
+    // 미리 정의된 배경색 설정 (BGR 순서)
+    if (text == "흰색") {
+        currentBackgroundColor = cv::Scalar(255, 255, 255); // 흰색
+    } else if (text == "파란색") {
+        currentBackgroundColor = cv::Scalar(255, 0, 0); // 파란색
+    } else if (text == "빨간색") {
+        currentBackgroundColor = cv::Scalar(0, 0, 255); // 빨간색
+    } else if (text == "회색") {
+        currentBackgroundColor = cv::Scalar(128, 128, 128); // 회색
+    }
+
+    // 배경 이미지 새로 생성
+    createBackgroundWithColor(currentBackgroundColor);
 
     // 현재 이미지가 있으면 applyAllEffects, 없으면 배경만 표시
     if (!originalImage.empty()) {
@@ -816,34 +826,8 @@ void PhotoEditPage::on_slider_red_valueChanged(int value)
         cv::Mat emptyMat;
         displayCurrentImage(emptyMat);
     }
-}
 
-void PhotoEditPage::on_slider_green_valueChanged(int value)
-{
-    greenValue = value;
-    createRGBBackground();
-
-    // 현재 이미지가 있으면 applyAllEffects, 없으면 배경만 표시
-    if (!originalImage.empty()) {
-        applyAllEffects();
-    } else {
-        cv::Mat emptyMat;
-        displayCurrentImage(emptyMat);
-    }
-}
-
-void PhotoEditPage::on_slider_blue_valueChanged(int value)
-{
-    blueValue = value;
-    createRGBBackground();
-
-    // 현재 이미지가 있으면 applyAllEffects, 없으면 배경만 표시
-    if (!originalImage.empty()) {
-        applyAllEffects();
-    } else {
-        cv::Mat emptyMat;
-        displayCurrentImage(emptyMat);
-    }
+    qDebug() << "Background color changed to:" << text;
 }
 
 

@@ -32,6 +32,7 @@ class main_app : public QWidget
   private slots:
     void updateFrame();   // 프리뷰만 갱신
     void capturePhoto();  // 수트 합성 후 저장
+    void on_colorSelect_currentTextChanged(const QString &text);
 
   private:
     Ui::main_app *ui;
@@ -40,5 +41,6 @@ class main_app : public QWidget
 
     cv::Mat lastFrameBGR_;   // 최신 원본 프레임
     SuitComposer comp_;      // 합성 엔진
+    cv::Scalar selectedBackgroundColor; // 선택된 배경색 (BGR)
 };
 #endif // MAIN_APP_H

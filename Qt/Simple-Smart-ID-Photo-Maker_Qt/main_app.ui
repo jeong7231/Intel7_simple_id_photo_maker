@@ -28,16 +28,26 @@
        <item>
         <widget class="QComboBox" name="colorSelect">
          <property name="currentText">
-          <string>white</string>
+          <string>흰색</string>
          </property>
          <item>
           <property name="text">
-           <string>white</string>
+           <string>흰색</string>
           </property>
          </item>
          <item>
           <property name="text">
-           <string>blue</string>
+           <string>파란색</string>
+          </property>
+         </item>
+         <item>
+          <property name="text">
+           <string>빨간색</string>
+          </property>
+         </item>
+         <item>
+          <property name="text">
+           <string>회색</string>
           </property>
          </item>
         </widget>

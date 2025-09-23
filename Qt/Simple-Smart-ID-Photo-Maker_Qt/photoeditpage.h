@@ -38,10 +38,8 @@ private:
 
     bool isTeethWhiteningMode = false;
 
-    // RGB 배경 관련 변수
-    int redValue = 255;
-    int greenValue = 255;
-    int blueValue = 255;
+    // 배경색 관련 변수
+    cv::Scalar currentBackgroundColor = cv::Scalar(255, 255, 255); // 기본 흰색 (BGR)
     cv::Mat backgroundImage;
 
     cv::CascadeClassifier faceCascade;
@@ -56,7 +54,7 @@ private:
     void applySmoothSpot(cv::Mat& image, const cv::Point& center, int radius);
     void applyInpaintSpot(cv::Mat& image, const cv::Point& center, int radius);
     void applyTeethWhitening(cv::Mat& image, const cv::Point& center, int radius);
-    void createRGBBackground();
+    void createBackgroundWithColor(const cv::Scalar& color);
     cv::Mat overlayPhotoOnBackground(const cv::Mat& photo, const cv::Mat& background);
 
 protected:
@@ -77,9 +75,7 @@ private slots:
     void on_eye_size_bar_valueChanged(int value);
     void on_spot_remove_pen_toggled(bool checked);
     void on_teeth_whiten_4_button_clicked(bool checked);
-    void on_slider_red_valueChanged(int value);
-    void on_slider_green_valueChanged(int value);
-    void on_slider_blue_valueChanged(int value);
+    void on_comboBox_background_currentTextChanged(const QString &text);
 
 };
 

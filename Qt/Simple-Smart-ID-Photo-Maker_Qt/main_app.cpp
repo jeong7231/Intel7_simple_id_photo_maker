@@ -24,6 +24,10 @@ main_app::main_app(QWidget *parent)
     comp_.setGuideVisible(true);
     comp_.setGuideOpacity(0.7);
 
+    // 배경색 초기화 (기본 흰색)
+    selectedBackgroundColor = cv::Scalar(255, 255, 255);
+    comp_.setBackgroundColor(selectedBackgroundColor);
+
     // 카메라
     camera.open(0, cv::CAP_V4L2);
     if(!camera.isOpened()) camera.open(0, cv::CAP_ANY);
@@ -67,16 +71,18 @@ void main_app::capturePhoto()
         if(lastFrameBGR_.empty()) return;
     }
 
-    // 수트 ⊕ 얼굴 합성 RGBA
-    cv::Mat outRGBA = comp_.composeRGBA(lastFrameBGR_);
+    // 수트 ⊕ 얼굴 합성 + 배경색 적용된 BGR 이미지
+    cv::Mat outBGR = comp_.composeBGR(lastFrameBGR_);
 
     // 저장 경로
     QDir().mkpath("result");
     const QString ts = QDateTime::currentDateTime().toString("yyyyMMdd_HHmmss");
-    currentImagePath = QString("result/suit_%1.png").arg(ts);
+    currentImagePath = QString("result/suit_%1.jpg").arg(ts); // JPG로 변경
 
-    // PNG RGBA 저장
-    cv::imwrite(currentImagePath.toStdString(), outRGBA, {cv::IMWRITE_PNG_COMPRESSION, 3});
+    // JPG BGR 저장
+    cv::imwrite(currentImagePath.toStdString(), outBGR, {cv::IMWRITE_JPEG_QUALITY, 95});
+
+    qDebug() << "Captured photo with background color applied:" << currentImagePath;
 
     // 편집 페이지로 이동
     if(!editPage) {
@@ -117,6 +123,28 @@ void main_app::goToExportPageWithImage()
     exportPage->show();
     editPage->hide();
     this->hide();
+}
+
+void main_app::on_colorSelect_currentTextChanged(const QString &text)
+{
+    // 선택된 색상에 따라 배경색 설정 (BGR 순서)
+    if (text == "흰색") {
+        selectedBackgroundColor = cv::Scalar(255, 255, 255);
+    } else if (text == "파란색") {
+        selectedBackgroundColor = cv::Scalar(255, 0, 0);
+    } else if (text == "빨간색") {
+        selectedBackgroundColor = cv::Scalar(0, 0, 255);
+    } else if (text == "회색") {
+        selectedBackgroundColor = cv::Scalar(128, 128, 128);
+    }
+
+    // SuitComposer에 배경색 적용
+    comp_.setBackgroundColor(selectedBackgroundColor);
+
+    qDebug() << "Background color changed to:" << text
+             << "BGR(" << selectedBackgroundColor[0] << ","
+             << selectedBackgroundColor[1] << ","
+             << selectedBackgroundColor[2] << ")";
 }
 
 main_app::~main_app()

@@ -20,12 +20,16 @@ class SuitComposer : public QObject
     void setMirror(bool on);
     void setGuideVisible(bool on);
     void setGuideOpacity(double a01);
+    void setBackgroundColor(const cv::Scalar& color);
 
     // 프리뷰 생성: 입력 BGR 프레임 -> 미러/리사이즈/가이드 오버레이된 BGR 반환
     cv::Mat makePreviewBGR(const cv::Mat& frameBGR) const;
 
     // 얼굴 알파 생성 + 수트 합성 RGBA 반환
     cv::Mat composeRGBA(const cv::Mat& frameBGR);
+
+    // 배경색이 적용된 BGR 이미지 반환 (투명 배경 대신)
+    cv::Mat composeBGR(const cv::Mat& frameBGR);
 
     // 유틸: Mat<->QImage 변환
     static QImage matBGR2QImage(const cv::Mat& bgr);
@@ -56,6 +60,7 @@ class SuitComposer : public QObject
 
     cv::CascadeClassifier faceDet_;
     bool hasCascade_=false;
+    cv::Scalar backgroundColor_ = cv::Scalar(255, 255, 255); // 기본 흰색 배경
 };
 
 #endif // SUITCOMPOSER_H
