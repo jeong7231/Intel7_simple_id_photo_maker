@@ -4,6 +4,7 @@
 #include <QWidget>
 #include <QMouseEvent>
 #include <opencv2/opencv.hpp>
+#include <opencv2/face.hpp>
 
 class main_app;
 
@@ -35,8 +36,11 @@ private:
     bool isSpotRemovalMode = false;
     cv::Mat spotSmoothImage;
 
+    bool isTeethWhiteningMode = false;
+
     cv::CascadeClassifier faceCascade;
     cv::CascadeClassifier eyeCascade;
+    cv::Ptr<cv::face::Facemark> facemark;
 
     cv::Mat displayCurrentImage(cv::Mat& image);
     void applyAllEffects();
@@ -45,6 +49,7 @@ private:
     cv::Rect safeRect(int x, int y, int w, int h, int maxW, int maxH);
     void applySmoothSpot(cv::Mat& image, const cv::Point& center, int radius);
     void applyInpaintSpot(cv::Mat& image, const cv::Point& center, int radius);
+    void applyTeethWhitening(cv::Mat& image, const cv::Point& center, int radius);
 
 protected:
     void mousePressEvent(QMouseEvent *event) override;
@@ -63,6 +68,7 @@ private slots:
     void on_Sharpen_bar_actionTriggered(int action);
     void on_eye_size_bar_valueChanged(int value);
     void on_spot_remove_pen_toggled(bool checked);
+    void on_teeth_whiten_4_button_clicked(bool checked);
 
 };
 

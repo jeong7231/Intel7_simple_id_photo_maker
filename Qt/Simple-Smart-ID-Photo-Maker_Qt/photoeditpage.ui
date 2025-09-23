@@ -68,9 +68,12 @@
             </widget>
            </item>
            <item>
-            <widget class="QPushButton" name="pushButton_3">
+            <widget class="QPushButton" name="teeth_whiten_4_button">
              <property name="text">
-              <string>PushButton</string>
+              <string>치아 미백</string>
+             </property>
+             <property name="checkable">
+              <bool>true</bool>
              </property>
             </widget>
            </item>

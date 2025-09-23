@@ -6,6 +6,10 @@
 #include <QDebug>
 #include <QStringList>
 
+// ============================================================================
+// CONSTRUCTOR & DESTRUCTOR
+// ============================================================================
+
 PhotoEditPage::PhotoEditPage(QWidget *parent)
     : QWidget(parent)
     , ui(new Ui::PhotoEditPage)
@@ -21,17 +25,26 @@ PhotoEditPage::PhotoEditPage(QWidget *parent)
     ui->eye_size_bar->setRange(0, 10);
     ui->eye_size_bar->setValue(0);
 
-    // 캐스케이드 분류기 로드 (절대경로)
+    // 캐스케이드 분류기 로드 (절대경로) - 시스템에서 찾은 절대경로 사용
     if (!faceCascade.load("/usr/local/share/opencv4/haarcascades/haarcascade_frontalface_default.xml")) {
-        qDebug() << "Failed to load face cascade classifier";
+        qDebug() << "Failed to load face cascade classifier from system path";
+        // 백업 경로도 시도
+        if (!faceCascade.load("/home/ubuntu/opencv/Intel7_simple_id_photo_maker/jinsu/haarcascade_frontalface_default.xml")) {
+            qDebug() << "Failed to load face cascade classifier from both paths";
+        } else {
+            qDebug() << "Successfully loaded face cascade from backup path";
+        }
+    } else {
+        qDebug() << "Successfully loaded face cascade from system path";
     }
 
-    // 모든 눈 캐스케이드 파일을 순차적으로 시도
+    // 모든 눈 캐스케이드 파일을 순차적으로 시도 (시스템 경로 우선)
     QStringList eyeCascadePaths = {
         "/usr/local/share/opencv4/haarcascades/haarcascade_eye.xml",
         "/usr/local/share/opencv4/haarcascades/haarcascade_eye_tree_eyeglasses.xml",
         "/usr/local/share/opencv4/haarcascades/haarcascade_lefteye_2splits.xml",
-        "/usr/local/share/opencv4/haarcascades/haarcascade_righteye_2splits.xml"
+        "/usr/local/share/opencv4/haarcascades/haarcascade_righteye_2splits.xml",
+        "/home/ubuntu/opencv/Intel7_simple_id_photo_maker/jinsu/haarcascade_eye_tree_eyeglasses.xml"
     };
 
     bool eyeCascadeLoaded = false;
@@ -48,6 +61,28 @@ PhotoEditPage::PhotoEditPage(QWidget *parent)
     if (!eyeCascadeLoaded) {
         qDebug() << "Failed to load any eye cascade classifier";
     }
+
+    // 얼굴 랜드마크 모델 초기화
+    facemark = cv::face::FacemarkLBF::create();
+
+    // 랜드마크 모델 파일 로드 (치아 미백에 필요) - 다운로드한 절대경로 사용
+    try {
+        facemark->loadModel("/tmp/lbfmodel.yaml");
+        qDebug() << "Successfully loaded lbfmodel.yaml for facial landmarks";
+    } catch (const cv::Exception& e) {
+        qDebug() << "Failed to load lbfmodel.yaml from /tmp, trying backup path";
+        try {
+            facemark->loadModel("/home/ubuntu/opencv/Intel7_simple_id_photo_maker/jinsu/lbfmodel.yaml");
+            qDebug() << "Successfully loaded lbfmodel.yaml from backup path";
+        } catch (const cv::Exception& e2) {
+            qDebug() << "Failed to load lbfmodel.yaml - teeth whitening may not work properly";
+        }
+    }
+}
+
+PhotoEditPage::~PhotoEditPage()
+{
+    delete ui;
 }
 
 void PhotoEditPage::setMainApp(main_app* app)
@@ -55,12 +90,12 @@ void PhotoEditPage::setMainApp(main_app* app)
     mainApp = app;
     connect(ui->finish_button, &QPushButton::clicked, mainApp, &main_app::goToExportPageWithImage);
     connect(ui->BW_Button, &QPushButton::toggled, this, &PhotoEditPage::on_BW_Button_clicked);
+    connect(ui->teeth_whiten_4_button, &QPushButton::toggled, this, &PhotoEditPage::on_teeth_whiten_4_button_clicked);
 }
 
-PhotoEditPage::~PhotoEditPage()
-{
-    delete ui;
-}
+// ============================================================================
+// IMAGE LOADING & DISPLAY
+// ============================================================================
 
 void PhotoEditPage::loadImage(const QString& path)
 {
@@ -105,12 +140,14 @@ cv::Mat PhotoEditPage::displayCurrentImage(cv::Mat& image)
     return display_image;
 }
 
-void PhotoEditPage::on_BW_Button_clicked(bool checked)
+cv::Mat PhotoEditPage::getCurrentImage() const
 {
-    isBWMode = checked;
-    applyAllEffects();
+    return currentImage;
 }
 
+// ============================================================================
+// EFFECT APPLICATION
+// ============================================================================
 
 void PhotoEditPage::applyAllEffects()
 {
@@ -150,6 +187,8 @@ void PhotoEditPage::applyAllEffects()
         }
     }
 
+    // 치아 미백은 이제 수동으로만 적용 (마우스 클릭 시)
+
     if (isBWMode) {
         cv::cvtColor(currentImage, currentImage, cv::COLOR_BGR2GRAY);
         cv::cvtColor(currentImage, currentImage, cv::COLOR_GRAY2BGR);
@@ -162,14 +201,53 @@ void PhotoEditPage::applyAllEffects()
     displayCurrentImage(currentImage);
 }
 
+// ============================================================================
+// UI EVENT HANDLERS
+// ============================================================================
+
+void PhotoEditPage::on_BW_Button_clicked(bool checked)
+{
+    isBWMode = checked;
+    applyAllEffects();
+}
+
 void PhotoEditPage::on_horizontal_flip_button_clicked()
 {
     isHorizontalFlipped = !isHorizontalFlipped;
     applyAllEffects();
 }
 
+void PhotoEditPage::on_Sharpen_bar_actionTriggered(int)
+{
+    sharpnessStrength = ui->Sharpen_bar->value();
+    applyAllEffects();
+}
 
-// opencv_origin.cpp 기반 선명도 조정 함수
+void PhotoEditPage::on_eye_size_bar_valueChanged(int value)
+{
+    eyeSizeStrength = value;
+    applyAllEffects();
+}
+
+void PhotoEditPage::on_spot_remove_pen_toggled(bool checked)
+{
+    isSpotRemovalMode = checked;
+    if (checked) {
+        // 치아 미백 모드 비활성화
+        isTeethWhiteningMode = false;
+        ui->teeth_whiten_4_button->setChecked(false);
+        ui->photoScreen->setCursor(Qt::CrossCursor);
+        qDebug() << "Spot removal mode enabled";
+    } else {
+        ui->photoScreen->setCursor(Qt::ArrowCursor);
+        qDebug() << "Spot removal mode disabled";
+    }
+}
+
+// ============================================================================
+// IMAGE PROCESSING FUNCTIONS
+// ============================================================================
+
 void PhotoEditPage::sharpen(cv::Mat& image, int strength) {
     if (strength <= 0 || image.empty()) return;
     if (image.cols <= 0 || image.rows <= 0 || image.cols > 3000 || image.rows > 3000) return;
@@ -197,26 +275,6 @@ void PhotoEditPage::sharpen(cv::Mat& image, int strength) {
     cv::addWeighted(upscaled, 1.0f + amount, blurred, -amount, 0, upscaled);
 
     cv::resize(upscaled, image, original_size, 0, 0, cv::INTER_AREA);
-}
-
-void PhotoEditPage::on_Sharpen_bar_actionTriggered(int)
-{
-    sharpnessStrength = ui->Sharpen_bar->value();
-    applyAllEffects();
-}
-
-
-
-
-void PhotoEditPage::on_eye_size_bar_valueChanged(int value)
-{
-    eyeSizeStrength = value;
-    applyAllEffects();
-}
-
-cv::Mat PhotoEditPage::getCurrentImage() const
-{
-    return currentImage;
 }
 
 cv::Rect PhotoEditPage::safeRect(int x, int y, int w, int h, int maxW, int maxH) {
@@ -335,18 +393,9 @@ void PhotoEditPage::correctEyes(cv::Mat& image, cv::Rect roi, int strength) {
     }
 }
 
-
-void PhotoEditPage::on_spot_remove_pen_toggled(bool checked)
-{
-    isSpotRemovalMode = checked;
-    if (checked) {
-        ui->photoScreen->setCursor(Qt::CrossCursor);
-        qDebug() << "Spot removal mode enabled";
-    } else {
-        ui->photoScreen->setCursor(Qt::ArrowCursor);
-        qDebug() << "Spot removal mode disabled";
-    }
-}
+// ============================================================================
+// SPOT REMOVAL FUNCTIONS
+// ============================================================================
 
 void PhotoEditPage::applySmoothSpot(cv::Mat& image, const cv::Point& center, int radius) {
     if (image.empty()) return;
@@ -445,15 +494,105 @@ void PhotoEditPage::applyInpaintSpot(cv::Mat& image, const cv::Point& center, in
     qDebug() << "Applied inpaint spot removal at (" << center.x << "," << center.y << ") with radius" << effectiveRadius;
 }
 
+void PhotoEditPage::applyTeethWhitening(cv::Mat& image, const cv::Point& center, int radius) {
+    if (image.empty()) return;
+    if (image.cols <= 0 || image.rows <= 0 || image.cols > 5000 || image.rows > 5000) return;
+    if (radius <= 0 || radius > 100) return;
+
+    // 치아 미백 적용 영역 설정
+    int effectiveRadius = radius;  // 치아 미백 크기 줄임
+    cv::Rect roi = safeRect(center.x - effectiveRadius, center.y - effectiveRadius,
+                           2 * effectiveRadius, 2 * effectiveRadius, image.cols, image.rows);
+    if (roi.empty()) return;
+
+    cv::Mat roi_image = image(roi);
+    if (roi_image.empty()) return;
+
+    // --- Lab 색공간 변환 ---
+    cv::Mat lab_roi;
+    cv::cvtColor(roi_image, lab_roi, cv::COLOR_BGR2Lab);
+
+    // --- 원형 마스크 생성 ---
+    cv::Mat mask = cv::Mat::zeros(roi.size(), CV_8UC1);
+    cv::Point mask_center(roi.width / 2, roi.height / 2);
+
+    // 그라데이션 마스크 생성 (중심에서 가장자리로 갈수록 약해짐)
+    for (int y = 0; y < mask.rows; y++) {
+        for (int x = 0; x < mask.cols; x++) {
+            double distance = cv::norm(cv::Point(x, y) - mask_center);
+            double alpha = std::max(0.0, 1.0 - (distance / effectiveRadius));
+            alpha = std::pow(alpha, 0.5); // 부드러운 그라데이션
+            mask.at<uchar>(y, x) = static_cast<uchar>(255 * alpha);
+        }
+    }
+
+    // 마스크 부드럽게 처리
+    cv::GaussianBlur(mask, mask, cv::Size(9, 9), 3);
+
+    // --- 치아 미백 처리 ---
+    float whitening_strength = 8.0f;  // 미백 강도
+    float yellow_reduction = 6.0f;    // 노란기 제거 강도
+
+    for (int r = 0; r < lab_roi.rows; ++r) {
+        for (int c = 0; c < lab_roi.cols; ++c) {
+            uchar mask_val = mask.at<uchar>(r, c);
+            if (mask_val > 5) {  // 마스크 임계값
+                cv::Vec3b& lab_pixel = lab_roi.at<cv::Vec3b>(r, c);
+                float alpha = mask_val / 255.0f;  // 마스크 강도에 따른 알파 블렌딩
+
+                // L 채널 (밝기) 대폭 증가
+                int new_l = lab_pixel[0] + static_cast<int>(whitening_strength * alpha);
+                lab_pixel[0] = cv::saturate_cast<uchar>(std::min(new_l, 255));
+
+                // A 채널 (초록-빨강) 중성으로 조정
+                int a_center = 128;
+                int new_a = lab_pixel[1] + static_cast<int>((a_center - lab_pixel[1]) * alpha * 0.3f);
+                lab_pixel[1] = cv::saturate_cast<uchar>(new_a);
+
+                // B 채널 (파랑-노랑) 파랑쪽으로 강하게 조정 (노란기 제거)
+                int new_b = lab_pixel[2] - static_cast<int>(yellow_reduction * alpha);
+                lab_pixel[2] = cv::saturate_cast<uchar>(std::max(new_b, 0));
+            }
+        }
+    }
+
+    // --- BGR로 다시 변환 ---
+    cv::Mat whitened_roi;
+    cv::cvtColor(lab_roi, whitened_roi, cv::COLOR_Lab2BGR);
+
+    // --- 원본 이미지에 적용 ---
+    cv::Mat final_mask_3ch;
+    cv::cvtColor(mask, final_mask_3ch, cv::COLOR_GRAY2BGR);
+    final_mask_3ch.convertTo(final_mask_3ch, CV_32F, 1.0/255.0);
+
+    cv::Mat roi_float, whitened_float, original_float;
+    roi_image.convertTo(original_float, CV_32F);
+    whitened_roi.convertTo(whitened_float, CV_32F);
+
+    // 알파 블렌딩으로 자연스럽게 합성
+    cv::Mat result_float;
+    cv::multiply(final_mask_3ch, whitened_float, result_float);
+    cv::multiply(cv::Scalar::all(1.0) - final_mask_3ch, original_float, original_float);
+    cv::add(result_float, original_float, result_float);
+
+    result_float.convertTo(roi_image, CV_8U);
+
+    qDebug() << "Applied manual teeth whitening at (" << center.x << "," << center.y << ") with radius" << effectiveRadius;
+}
+
+// ============================================================================
+// MOUSE EVENT HANDLERS
+// ============================================================================
+
 void PhotoEditPage::mousePressEvent(QMouseEvent *event) {
-    if (!isSpotRemovalMode || originalImage.empty()) {
+    if ((!isSpotRemovalMode && !isTeethWhiteningMode) || originalImage.empty()) {
         QWidget::mousePressEvent(event);
         return;
     }
 
     if (event->button() == Qt::LeftButton) {
         // photoScreen 위젯 내에서의 상대적 위치 계산
-        QPoint globalPos = event->globalPos();
+        QPoint globalPos = event->globalPosition().toPoint();
         QPoint labelGlobalPos = ui->photoScreen->mapToGlobal(QPoint(0, 0));
         QPoint labelPos = globalPos - labelGlobalPos;
 
@@ -478,12 +617,19 @@ void PhotoEditPage::mousePressEvent(QMouseEvent *event) {
                     drawing = true;
                     lastPoint = cv::Point(imageX, imageY);
 
-                    // 아주 작은 점 제거용 초정밀 잡티제거
-                    applyInpaintSpot(spotSmoothImage, lastPoint, 2);    // 매우 작은 inpaint
-                    applySmoothSpot(spotSmoothImage, lastPoint, 3);     // 매우 작은 smooth
+                    if (isSpotRemovalMode) {
+                        // 잡티 제거
+                        applyInpaintSpot(spotSmoothImage, lastPoint, 2);    // 매우 작은 inpaint
+                        applySmoothSpot(spotSmoothImage, lastPoint, 3);     // 매우 작은 smooth
+                        qDebug() << "Enhanced spot removal applied at:" << imageX << "," << imageY;
+                    } else if (isTeethWhiteningMode) {
+                        // 치아 미백 (더 작은 크기로)
+                        applyTeethWhitening(spotSmoothImage, lastPoint, 6);  // 치아 미백 적용 크기 줄임
+                        qDebug() << "Manual teeth whitening applied at:" << imageX << "," << imageY;
+                    }
 
                     applyAllEffects();
-                    qDebug() << "Enhanced spot removal applied at:" << imageX << "," << imageY
+                    qDebug() << "Action applied at:" << imageX << "," << imageY
                              << "Label pos:" << labelPos.x() << "," << labelPos.y()
                              << "Scale:" << scaleX << "," << scaleY;
                 }
@@ -494,13 +640,13 @@ void PhotoEditPage::mousePressEvent(QMouseEvent *event) {
 }
 
 void PhotoEditPage::mouseMoveEvent(QMouseEvent *event) {
-    if (!isSpotRemovalMode || !drawing || originalImage.empty()) {
+    if ((!isSpotRemovalMode && !isTeethWhiteningMode) || !drawing || originalImage.empty()) {
         QWidget::mouseMoveEvent(event);
         return;
     }
 
     // photoScreen 위젯 내에서의 상대적 위치 계산
-    QPoint globalPos = event->globalPos();
+    QPoint globalPos = event->globalPosition().toPoint();
     QPoint labelGlobalPos = ui->photoScreen->mapToGlobal(QPoint(0, 0));
     QPoint labelPos = globalPos - labelGlobalPos;
 
@@ -533,8 +679,13 @@ void PhotoEditPage::mouseMoveEvent(QMouseEvent *event) {
                     int x_interp = static_cast<int>(lastPoint.x + t * (current.x - lastPoint.x));
                     int y_interp = static_cast<int>(lastPoint.y + t * (current.y - lastPoint.y));
 
-                    // 드래그 중에는 빠른 처리를 위해 매우 작은 smooth만 적용
-                    applySmoothSpot(spotSmoothImage, cv::Point(x_interp, y_interp), 3);
+                    if (isSpotRemovalMode) {
+                        // 드래그 중에는 빠른 처리를 위해 매우 작은 smooth만 적용
+                        applySmoothSpot(spotSmoothImage, cv::Point(x_interp, y_interp), 3);
+                    } else if (isTeethWhiteningMode) {
+                        // 치아 미백 드래그 (더 작은 크기로)
+                        applyTeethWhitening(spotSmoothImage, cv::Point(x_interp, y_interp), 4);
+                    }
                 }
 
                 lastPoint = current;
@@ -550,5 +701,21 @@ void PhotoEditPage::mouseReleaseEvent(QMouseEvent *event) {
         drawing = false;
     }
     QWidget::mouseReleaseEvent(event);
+}
+
+
+void PhotoEditPage::on_teeth_whiten_4_button_clicked(bool checked)
+{
+    isTeethWhiteningMode = checked;
+    if (checked) {
+        // 잡티 제거 모드 비활성화
+        isSpotRemovalMode = false;
+        ui->spot_remove_pen->setChecked(false);
+        ui->photoScreen->setCursor(Qt::PointingHandCursor);
+        qDebug() << "Manual teeth whitening mode enabled - click on teeth to whiten";
+    } else {
+        ui->photoScreen->setCursor(Qt::ArrowCursor);
+        qDebug() << "Manual teeth whitening mode disabled";
+    }
 }
 
