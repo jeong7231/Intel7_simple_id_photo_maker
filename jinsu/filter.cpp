@@ -146,8 +146,7 @@ void whitenTeeth(Mat& image, const vector<Point>& mouth_points, int strength) {
     Mat teeth_mask;
     // Adjusting HSV range for teeth: broader saturation and slightly lower value start
     inRange(hsv, Scalar(0, 0, 100), Scalar(180, 80, 255), teeth_mask);
-    namedWindow("Teeth Mask", WINDOW_NORMAL); // Make window resizable
-    resizeWindow("Teeth Mask", 300, 300); // Set a larger default size
+    
 
     // --- 입술 다각형 내부와 교집합 ---
     bitwise_and(teeth_mask, lips_roi, teeth_mask);
@@ -157,7 +156,7 @@ void whitenTeeth(Mat& image, const vector<Point>& mouth_points, int strength) {
     morphologyEx(teeth_mask, teeth_mask, MORPH_OPEN, kernel);
     morphologyEx(teeth_mask, teeth_mask, MORPH_CLOSE, kernel);
     GaussianBlur(teeth_mask, teeth_mask, Size(11, 11), 3);
-    imshow("Teeth Mask", teeth_mask); // Debugging line
+    
 
     // --- Lab 색공간으로 변환 ---
     Mat lab;
@@ -214,14 +213,10 @@ void on_trackbar(int, void*) {
             std::vector<Point> mouth_points;
             for (int i = 48; i <= 67; i++) {
                 mouth_points.push_back(landmarks[0][i]);
-                // Draw a small circle at each mouth landmark for debugging
-                circle(current, landmarks[0][i], 2, Scalar(0, 255, 0), -1); // Green circles
             }
             whitenTeeth(current, mouth_points, teeth_whitening_strength);
         } else {
             cerr << "Facial landmark detection failed for teeth whitening.";
-            // Also draw the face_roi if landmark detection failed, to see if face is detected
-            rectangle(current, face_roi, Scalar(0, 0, 255), 2); // Red rectangle
         }
     }
 
