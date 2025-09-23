@@ -72,6 +72,7 @@ void PhotoEditPage::loadImage(const QString& path)
     }
 
     currentImage = originalImage.clone();
+    spotSmoothImage = originalImage.clone();
     displayCurrentImage(currentImage);
 }
 
@@ -118,7 +119,7 @@ void PhotoEditPage::applyAllEffects()
         return;
     }
 
-    currentImage = originalImage.clone();
+    currentImage = spotSmoothImage.clone();
 
     // 선명도 조정 적용
     if (sharpnessStrength > 0) {
@@ -332,5 +333,222 @@ void PhotoEditPage::correctEyes(cv::Mat& image, cv::Rect roi, int strength) {
 
         enlarged_eye.copyTo(roi_img(target_roi), mask);
     }
+}
+
+
+void PhotoEditPage::on_spot_remove_pen_toggled(bool checked)
+{
+    isSpotRemovalMode = checked;
+    if (checked) {
+        ui->photoScreen->setCursor(Qt::CrossCursor);
+        qDebug() << "Spot removal mode enabled";
+    } else {
+        ui->photoScreen->setCursor(Qt::ArrowCursor);
+        qDebug() << "Spot removal mode disabled";
+    }
+}
+
+void PhotoEditPage::applySmoothSpot(cv::Mat& image, const cv::Point& center, int radius) {
+    if (image.empty()) return;
+    if (image.cols <= 0 || image.rows <= 0 || image.cols > 5000 || image.rows > 5000) return;
+    if (radius <= 0 || radius > 200) return;
+
+    // 매우 작은 점 제거용 반지름 (최소 확대)
+    int effectiveRadius = radius * 1.2;
+    cv::Rect roi = safeRect(center.x - effectiveRadius, center.y - effectiveRadius,
+                           2 * effectiveRadius, 2 * effectiveRadius, image.cols, image.rows);
+    if (roi.empty()) return;
+
+    if (roi.width > 400 || roi.height > 400) {
+        qDebug() << "[applySmoothSpot] ROI too big:" << roi.width << "x" << roi.height;
+        return;
+    }
+
+    cv::Mat roi_image = image(roi);
+    if (roi_image.empty()) return;
+
+    // 다중 단계 잡티 제거 알고리즘
+    cv::Mat result = roi_image.clone();
+
+    // 매우 작은 점 제거용 최소 처리
+    cv::Mat smoothed1;
+    cv::bilateralFilter(result, smoothed1, 5, 50, 50);
+
+    // 최종 결과 (아주 자연스럽게)
+    cv::Mat final_result;
+    cv::addWeighted(result, 0.5, smoothed1, 0.5, 0, final_result);
+
+    // 더 부드러운 마스크 생성
+    cv::Mat mask = cv::Mat::zeros(roi.size(), CV_8UC1);
+    cv::Point mask_center(roi.width / 2, roi.height / 2);
+    int mask_radius = std::min(roi.width, roi.height) / 2;
+
+    // 중심에서 가장자리로 갈수록 부드럽게 페이드되는 마스크
+    for (int y = 0; y < mask.rows; y++) {
+        for (int x = 0; x < mask.cols; x++) {
+            double distance = cv::norm(cv::Point(x, y) - mask_center);
+            double alpha = std::max(0.0, 1.0 - (distance / mask_radius));
+            alpha = std::pow(alpha, 0.5); // 부드러운 커브
+            mask.at<uchar>(y, x) = static_cast<uchar>(255 * alpha);
+        }
+    }
+
+    // 매우 작은 점용 정밀 마스크
+    cv::GaussianBlur(mask, mask, cv::Size(5, 5), 1.5);
+
+    // 최종 적용
+    final_result.copyTo(roi_image, mask);
+
+    qDebug() << "Applied enhanced spot removal at (" << center.x << "," << center.y << ") with radius" << effectiveRadius;
+}
+
+void PhotoEditPage::applyInpaintSpot(cv::Mat& image, const cv::Point& center, int radius) {
+    if (image.empty()) return;
+    if (image.cols <= 0 || image.rows <= 0 || image.cols > 5000 || image.rows > 5000) return;
+    if (radius <= 0 || radius > 200) return;
+
+    // 매우 작은 점용 inpainting 영역
+    int effectiveRadius = radius * 1.5;
+    cv::Rect roi = safeRect(center.x - effectiveRadius, center.y - effectiveRadius,
+                           2 * effectiveRadius, 2 * effectiveRadius, image.cols, image.rows);
+    if (roi.empty()) return;
+
+    cv::Mat roi_image = image(roi);
+    if (roi_image.empty()) return;
+
+    // inpainting용 마스크 생성
+    cv::Mat inpaint_mask = cv::Mat::zeros(roi.size(), CV_8UC1);
+    cv::Point mask_center(roi.width / 2, roi.height / 2);
+    int mask_radius = radius;
+
+    // 원형 마스크 생성
+    cv::circle(inpaint_mask, mask_center, mask_radius, cv::Scalar(255), -1);
+
+    // 작은 점용 inpainting (더 정밀하게)
+    cv::Mat inpainted;
+    cv::inpaint(roi_image, inpaint_mask, inpainted, 2, cv::INPAINT_TELEA);
+
+    // 결과를 부드럽게 블렌딩
+    cv::Mat blend_mask = cv::Mat::zeros(roi.size(), CV_8UC1);
+    for (int y = 0; y < blend_mask.rows; y++) {
+        for (int x = 0; x < blend_mask.cols; x++) {
+            double distance = cv::norm(cv::Point(x, y) - mask_center);
+            double alpha = std::max(0.0, 1.0 - (distance / (mask_radius * 1.5)));
+            alpha = std::pow(alpha, 0.3); // 부드러운 블렌딩
+            blend_mask.at<uchar>(y, x) = static_cast<uchar>(255 * alpha);
+        }
+    }
+
+    cv::GaussianBlur(blend_mask, blend_mask, cv::Size(3, 3), 1);
+    inpainted.copyTo(roi_image, blend_mask);
+
+    qDebug() << "Applied inpaint spot removal at (" << center.x << "," << center.y << ") with radius" << effectiveRadius;
+}
+
+void PhotoEditPage::mousePressEvent(QMouseEvent *event) {
+    if (!isSpotRemovalMode || originalImage.empty()) {
+        QWidget::mousePressEvent(event);
+        return;
+    }
+
+    if (event->button() == Qt::LeftButton) {
+        // photoScreen 위젯 내에서의 상대적 위치 계산
+        QPoint globalPos = event->globalPos();
+        QPoint labelGlobalPos = ui->photoScreen->mapToGlobal(QPoint(0, 0));
+        QPoint labelPos = globalPos - labelGlobalPos;
+
+        // photoScreen 위젯의 크기
+        QSize labelSize = ui->photoScreen->size();
+
+        // 라벨 내부인지 확인
+        if (labelPos.x() >= 0 && labelPos.y() >= 0 &&
+            labelPos.x() < labelSize.width() && labelPos.y() < labelSize.height()) {
+
+            QPixmap pixmap = ui->photoScreen->pixmap(Qt::ReturnByValue);
+            if (!pixmap.isNull()) {
+                // 이미지가 라벨에 ScaledContents로 표시되므로 직접 비율 계산
+                float scaleX = (float)originalImage.cols / labelSize.width();
+                float scaleY = (float)originalImage.rows / labelSize.height();
+
+                int imageX = (int)(labelPos.x() * scaleX);
+                int imageY = (int)(labelPos.y() * scaleY);
+
+                // 이미지 경계 확인
+                if (imageX >= 0 && imageY >= 0 && imageX < originalImage.cols && imageY < originalImage.rows) {
+                    drawing = true;
+                    lastPoint = cv::Point(imageX, imageY);
+
+                    // 아주 작은 점 제거용 초정밀 잡티제거
+                    applyInpaintSpot(spotSmoothImage, lastPoint, 2);    // 매우 작은 inpaint
+                    applySmoothSpot(spotSmoothImage, lastPoint, 3);     // 매우 작은 smooth
+
+                    applyAllEffects();
+                    qDebug() << "Enhanced spot removal applied at:" << imageX << "," << imageY
+                             << "Label pos:" << labelPos.x() << "," << labelPos.y()
+                             << "Scale:" << scaleX << "," << scaleY;
+                }
+            }
+        }
+    }
+    QWidget::mousePressEvent(event);
+}
+
+void PhotoEditPage::mouseMoveEvent(QMouseEvent *event) {
+    if (!isSpotRemovalMode || !drawing || originalImage.empty()) {
+        QWidget::mouseMoveEvent(event);
+        return;
+    }
+
+    // photoScreen 위젯 내에서의 상대적 위치 계산
+    QPoint globalPos = event->globalPos();
+    QPoint labelGlobalPos = ui->photoScreen->mapToGlobal(QPoint(0, 0));
+    QPoint labelPos = globalPos - labelGlobalPos;
+
+    // photoScreen 위젯의 크기
+    QSize labelSize = ui->photoScreen->size();
+
+    // 라벨 내부인지 확인
+    if (labelPos.x() >= 0 && labelPos.y() >= 0 &&
+        labelPos.x() < labelSize.width() && labelPos.y() < labelSize.height()) {
+
+        QPixmap pixmap = ui->photoScreen->pixmap(Qt::ReturnByValue);
+        if (!pixmap.isNull()) {
+            // 이미지가 라벨에 ScaledContents로 표시되므로 직접 비율 계산
+            float scaleX = (float)originalImage.cols / labelSize.width();
+            float scaleY = (float)originalImage.rows / labelSize.height();
+
+            int imageX = (int)(labelPos.x() * scaleX);
+            int imageY = (int)(labelPos.y() * scaleY);
+
+            if (imageX >= 0 && imageY >= 0 && imageX < originalImage.cols && imageY < originalImage.rows) {
+                cv::Point current(imageX, imageY);
+                int dx = abs(current.x - lastPoint.x);
+                int dy = abs(current.y - lastPoint.y);
+                int steps = std::max(dx, dy);
+                const int MAX_STEPS = 100;
+                if (steps > MAX_STEPS) steps = MAX_STEPS;
+
+                for (int i = 0; i <= steps; ++i) {
+                    float t = (steps == 0) ? 0.0f : (float)i / steps;
+                    int x_interp = static_cast<int>(lastPoint.x + t * (current.x - lastPoint.x));
+                    int y_interp = static_cast<int>(lastPoint.y + t * (current.y - lastPoint.y));
+
+                    // 드래그 중에는 빠른 처리를 위해 매우 작은 smooth만 적용
+                    applySmoothSpot(spotSmoothImage, cv::Point(x_interp, y_interp), 3);
+                }
+
+                lastPoint = current;
+                applyAllEffects();
+            }
+        }
+    }
+    QWidget::mouseMoveEvent(event);
+}
+
+void PhotoEditPage::mouseReleaseEvent(QMouseEvent *event) {
+    if (event->button() == Qt::LeftButton) {
+        drawing = false;
+    }
+    QWidget::mouseReleaseEvent(event);
 }
 

@@ -2,6 +2,7 @@
 #define PHOTOEDITPAGE_H
 
 #include <QWidget>
+#include <QMouseEvent>
 #include <opencv2/opencv.hpp>
 
 class main_app;
@@ -31,6 +32,8 @@ private:
     bool isHorizontalFlipped = false;
     int sharpnessStrength = 0;
     int eyeSizeStrength = 0;
+    bool isSpotRemovalMode = false;
+    cv::Mat spotSmoothImage;
 
     cv::CascadeClassifier faceCascade;
     cv::CascadeClassifier eyeCascade;
@@ -40,6 +43,17 @@ private:
     void sharpen(cv::Mat& image, int strength);
     void correctEyes(cv::Mat& image, cv::Rect roi, int strength);
     cv::Rect safeRect(int x, int y, int w, int h, int maxW, int maxH);
+    void applySmoothSpot(cv::Mat& image, const cv::Point& center, int radius);
+    void applyInpaintSpot(cv::Mat& image, const cv::Point& center, int radius);
+
+protected:
+    void mousePressEvent(QMouseEvent *event) override;
+    void mouseMoveEvent(QMouseEvent *event) override;
+    void mouseReleaseEvent(QMouseEvent *event) override;
+
+private:
+    bool drawing = false;
+    cv::Point lastPoint;
 
 public slots:
     void loadImage(const QString& imagePath);
@@ -48,6 +62,7 @@ private slots:
     void on_horizontal_flip_button_clicked();
     void on_Sharpen_bar_actionTriggered(int action);
     void on_eye_size_bar_valueChanged(int value);
+    void on_spot_remove_pen_toggled(bool checked);
 
 };
 

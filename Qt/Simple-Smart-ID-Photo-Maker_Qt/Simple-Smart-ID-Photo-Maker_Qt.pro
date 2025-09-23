@@ -29,12 +29,14 @@ SOURCES += \
     export_page.cpp \
     main.cpp \
     main_app.cpp \
-    photoeditpage.cpp
+    photoeditpage.cpp \
+    suitcomposer.cpp
 
 HEADERS += \
     export_page.h \
     main_app.h \
-    photoeditpage.h
+    photoeditpage.h \
+    suitcomposer.h
 
 FORMS += \
     export_page.ui \
