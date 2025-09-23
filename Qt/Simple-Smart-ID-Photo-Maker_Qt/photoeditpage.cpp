@@ -871,12 +871,10 @@ void PhotoEditPage::on_init_button_clicked()
     currentBackgroundColor = cv::Scalar(255, 255, 255); // 화이트 (BGR)
     createBackgroundWithColor(currentBackgroundColor);
 
-    // 원본 이미지가 있으면 currentImage와 spotSmoothImage를 원본으로 복원하고 표시
+    // 원본 이미지가 있으면 currentImage를 원본으로 복원하고 표시
     if (!originalImage.empty()) {
         qDebug() << "원본 이미지로 복원 중...";
         currentImage = originalImage.clone();
-        spotSmoothImage = originalImage.clone(); // 스팟 제거용 이미지도 원본으로 초기화
-        qDebug() << "모든 이미지를 원본으로 복원 완료";
         applyAllEffects(); // 초기화된 상태로 효과 적용 (실제로는 효과 없음)
     } else {
         qDebug() << "원본 이미지가 없음, 배경만 표시";

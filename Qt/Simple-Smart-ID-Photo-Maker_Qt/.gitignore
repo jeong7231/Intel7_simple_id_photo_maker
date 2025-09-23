@@ -1,0 +1,8 @@
+# Image files
+*.jpg
+*.jpeg
+*.png
+*.svg
+
+# Exception for specific required image
+!image/man_suit_bg_remove.png
