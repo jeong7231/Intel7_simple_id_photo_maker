@@ -25,6 +25,13 @@ PhotoEditPage::PhotoEditPage(QWidget *parent)
     ui->eye_size_bar->setRange(0, 10);
     ui->eye_size_bar->setValue(0);
 
+    // RGB 배경 초기화
+    createRGBBackground();
+
+    // 초기에 배경만 표시
+    cv::Mat emptyMat;
+    displayCurrentImage(emptyMat);
+
     // 캐스케이드 분류기 로드 (절대경로) - 시스템에서 찾은 절대경로 사용
     if (!faceCascade.load("/usr/local/share/opencv4/haarcascades/haarcascade_frontalface_default.xml")) {
         qDebug() << "Failed to load face cascade classifier from system path";
@@ -113,23 +120,45 @@ void PhotoEditPage::loadImage(const QString& path)
 
 cv::Mat PhotoEditPage::displayCurrentImage(cv::Mat& image)
 {
-    if (image.empty()) {
-        qDebug() << "Cannot display empty image";
-        return cv::Mat();
-    }
-
     cv::Mat display_image;
-    if (image.channels() == 3)
-    {
-        cv::cvtColor(image, display_image, cv::COLOR_BGR2RGB);
-    }
-    else if (image.channels() == 1)
-    {
-        cv::cvtColor(image, display_image, cv::COLOR_GRAY2RGB);
-    }
-    else
-    {
-        display_image = image.clone();
+
+    // 배경 이미지가 있는 경우 항상 오버레이 적용
+    if (!backgroundImage.empty()) {
+        qDebug() << "Background image exists: " << backgroundImage.cols << "x" << backgroundImage.rows;
+
+        if (image.empty()) {
+            // 이미지가 없으면 배경만 표시
+            display_image = backgroundImage.clone();
+            qDebug() << "Displaying background only (no photo loaded)";
+        } else {
+            // 이미지가 있으면 배경 위에 오버레이
+            display_image = overlayPhotoOnBackground(image, backgroundImage);
+            qDebug() << "Displaying photo overlaid on RGB background";
+        }
+
+        // BGR에서 RGB로 변환
+        cv::cvtColor(display_image, display_image, cv::COLOR_BGR2RGB);
+        qDebug() << "Final display image size: " << display_image.cols << "x" << display_image.rows;
+    } else {
+        // 배경이 없는 경우 기존 로직
+        qDebug() << "No background image available";
+        if (image.empty()) {
+            qDebug() << "Cannot display empty image and no background";
+            return cv::Mat();
+        }
+
+        if (image.channels() == 3)
+        {
+            cv::cvtColor(image, display_image, cv::COLOR_BGR2RGB);
+        }
+        else if (image.channels() == 1)
+        {
+            cv::cvtColor(image, display_image, cv::COLOR_GRAY2RGB);
+        }
+        else
+        {
+            display_image = image.clone();
+        }
     }
 
     QImage qimg(display_image.data, display_image.cols, display_image.rows, display_image.step, QImage::Format_RGB888);
@@ -716,6 +745,104 @@ void PhotoEditPage::on_teeth_whiten_4_button_clicked(bool checked)
     } else {
         ui->photoScreen->setCursor(Qt::ArrowCursor);
         qDebug() << "Manual teeth whitening mode disabled";
+    }
+}
+
+// ============================================================================
+// RGB 배경 관련 함수들
+// ============================================================================
+
+void PhotoEditPage::createRGBBackground()
+{
+    // 300x400 크기의 RGB 배경 이미지 생성 (OpenCV는 BGR 순서)
+    backgroundImage = cv::Mat(400, 300, CV_8UC3, cv::Scalar(blueValue, greenValue, redValue));
+    qDebug() << "Created RGB background: R=" << redValue << " G=" << greenValue << " B=" << blueValue;
+    qDebug() << "OpenCV BGR values: B=" << blueValue << " G=" << greenValue << " R=" << redValue;
+}
+
+cv::Mat PhotoEditPage::overlayPhotoOnBackground(const cv::Mat& photo, const cv::Mat& background)
+{
+    if (photo.empty() || background.empty()) {
+        qDebug() << "Empty photo or background in overlay function";
+        return photo.clone();
+    }
+
+    qDebug() << "Overlay function - Background size:" << background.cols << "x" << background.rows;
+    qDebug() << "Overlay function - Photo size:" << photo.cols << "x" << photo.rows;
+
+    // 300x400 배경 이미지 복사
+    cv::Mat result = background.clone();
+
+    // 사진을 배경보다 작게 만들기 (80% 크기로)
+    cv::Mat resizedPhoto;
+    cv::Size targetSize(240, 320); // 300x400의 80%
+
+    // 종횡비를 유지하면서 목표 크기에 맞게 리사이즈
+    float scaleX = (float)targetSize.width / photo.cols;
+    float scaleY = (float)targetSize.height / photo.rows;
+    float scale = std::min(scaleX, scaleY);
+
+    int newWidth = (int)(photo.cols * scale);
+    int newHeight = (int)(photo.rows * scale);
+
+    qDebug() << "Resizing photo from" << photo.cols << "x" << photo.rows << "to" << newWidth << "x" << newHeight;
+
+    cv::resize(photo, resizedPhoto, cv::Size(newWidth, newHeight));
+
+    // 중앙에 배치
+    int x = (300 - newWidth) / 2;
+    int y = (400 - newHeight) / 2;
+
+    qDebug() << "Placing photo at position:" << x << "," << y << "with margin around it";
+
+    cv::Rect roi(x, y, newWidth, newHeight);
+    resizedPhoto.copyTo(result(roi));
+
+    qDebug() << "Overlay completed, result size:" << result.cols << "x" << result.rows << "with background visible";
+
+    return result;
+}
+
+// RGB 슬라이더 이벤트 핸들러들
+void PhotoEditPage::on_slider_red_valueChanged(int value)
+{
+    redValue = value;
+    createRGBBackground();
+
+    // 현재 이미지가 있으면 applyAllEffects, 없으면 배경만 표시
+    if (!originalImage.empty()) {
+        applyAllEffects();
+    } else {
+        cv::Mat emptyMat;
+        displayCurrentImage(emptyMat);
+    }
+}
+
+void PhotoEditPage::on_slider_green_valueChanged(int value)
+{
+    greenValue = value;
+    createRGBBackground();
+
+    // 현재 이미지가 있으면 applyAllEffects, 없으면 배경만 표시
+    if (!originalImage.empty()) {
+        applyAllEffects();
+    } else {
+        cv::Mat emptyMat;
+        displayCurrentImage(emptyMat);
+    }
+}
+
+void PhotoEditPage::on_slider_blue_valueChanged(int value)
+{
+    blueValue = value;
+    createRGBBackground();
+
+    // 현재 이미지가 있으면 applyAllEffects, 없으면 배경만 표시
+    if (!originalImage.empty()) {
+        applyAllEffects();
+    } else {
+        cv::Mat emptyMat;
+        displayCurrentImage(emptyMat);
     }
 }
 
