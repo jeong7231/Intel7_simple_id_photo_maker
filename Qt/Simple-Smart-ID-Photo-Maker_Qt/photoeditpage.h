@@ -76,6 +76,8 @@ private slots:
     void on_spot_remove_pen_toggled(bool checked);
     void on_teeth_whiten_4_button_clicked(bool checked);
     void on_comboBox_background_currentTextChanged(const QString &text);
+    void on_retakeshot_button_clicked();
+    void on_init_button_clicked();
 
 };
 

@@ -98,6 +98,8 @@ void PhotoEditPage::setMainApp(main_app* app)
     connect(ui->finish_button, &QPushButton::clicked, mainApp, &main_app::goToExportPageWithImage);
     connect(ui->BW_Button, &QPushButton::toggled, this, &PhotoEditPage::on_BW_Button_clicked);
     connect(ui->teeth_whiten_4_button, &QPushButton::toggled, this, &PhotoEditPage::on_teeth_whiten_4_button_clicked);
+    connect(ui->retakeshot_button, &QPushButton::clicked, this, &PhotoEditPage::on_retakeshot_button_clicked);
+    connect(ui->init_button, &QPushButton::clicked, this, &PhotoEditPage::on_init_button_clicked);
 }
 
 // ============================================================================
@@ -830,4 +832,59 @@ void PhotoEditPage::on_comboBox_background_currentTextChanged(const QString &tex
     qDebug() << "Background color changed to:" << text;
 }
 
+
+
+void PhotoEditPage::on_retakeshot_button_clicked()
+{
+    // main_app으로 돌아가서 재촬영
+    if (mainApp) {
+        this->hide();
+        mainApp->show();
+    }
+}
+
+void PhotoEditPage::on_init_button_clicked()
+{
+    qDebug() << "=== 편집 초기화 버튼 클릭됨 ===";
+
+    // 모든 효과를 초기 상태로 되돌리기
+
+    // UI 컨트롤들을 초기값으로 설정
+    qDebug() << "UI 컨트롤 초기화 중...";
+    ui->BW_Button->setChecked(false);
+    ui->Sharpen_bar->setValue(0);
+    ui->eye_size_bar->setValue(0);
+    ui->spot_remove_pen->setChecked(false);
+    ui->teeth_whiten_4_button->setChecked(false);
+
+    // 효과 상태 변수들을 초기값으로 설정
+    qDebug() << "상태 변수 초기화 중...";
+    isBWMode = false;
+    isHorizontalFlipped = false;
+    sharpnessStrength = 0;
+    eyeSizeStrength = 0;
+    isSpotRemovalMode = false;
+    isTeethWhiteningMode = false;
+
+    // 배경색을 기본 흰색으로 설정
+    qDebug() << "배경색을 흰색으로 초기화 중...";
+    currentBackgroundColor = cv::Scalar(255, 255, 255); // 화이트 (BGR)
+    createBackgroundWithColor(currentBackgroundColor);
+
+    // 원본 이미지가 있으면 currentImage와 spotSmoothImage를 원본으로 복원하고 표시
+    if (!originalImage.empty()) {
+        qDebug() << "원본 이미지로 복원 중...";
+        currentImage = originalImage.clone();
+        spotSmoothImage = originalImage.clone(); // 스팟 제거용 이미지도 원본으로 초기화
+        qDebug() << "모든 이미지를 원본으로 복원 완료";
+        applyAllEffects(); // 초기화된 상태로 효과 적용 (실제로는 효과 없음)
+    } else {
+        qDebug() << "원본 이미지가 없음, 배경만 표시";
+        // 원본 이미지가 없으면 배경만 표시
+        cv::Mat emptyMat;
+        displayCurrentImage(emptyMat);
+    }
+
+    qDebug() << "=== 편집 초기화 완료 ===";
+}
 

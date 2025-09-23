@@ -15,7 +15,7 @@
   </property>
   <layout class="QVBoxLayout" name="verticalLayout_2">
    <item>
-    <layout class="QVBoxLayout" name="verticalLayout" stretch="10,1,1">
+    <layout class="QVBoxLayout" name="verticalLayout" stretch="10,1,0">
      <item>
       <layout class="QHBoxLayout" name="horizontalLayout_3" stretch="7,3">
        <item>
@@ -120,11 +120,29 @@
       </layout>
      </item>
      <item>
-      <widget class="QPushButton" name="finish_button">
-       <property name="text">
-        <string>편집 완료!</string>
-       </property>
-      </widget>
+      <layout class="QHBoxLayout" name="horizontalLayout">
+       <item>
+        <widget class="QPushButton" name="retakeshot_button">
+         <property name="text">
+          <string>사진 재촬영</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QPushButton" name="finish_button">
+         <property name="text">
+          <string>편집 완료!</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QPushButton" name="init_button">
+         <property name="text">
+          <string>편집 초기화</string>
+         </property>
+        </widget>
+       </item>
+      </layout>
      </item>
     </layout>
    </item>
