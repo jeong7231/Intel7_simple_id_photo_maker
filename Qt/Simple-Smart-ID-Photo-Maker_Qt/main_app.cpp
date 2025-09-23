@@ -4,6 +4,7 @@
 #include <QImage>
 #include <QTimer>
 #include <QDateTime>
+#include <QDebug>
 
 main_app::main_app(QWidget *parent)
     : QWidget(parent)
@@ -58,9 +59,14 @@ void main_app::capturePhoto()
         QString timestamp =
             QDateTime::currentDateTime().toString("yyyy-MM-dd_hh-mm-ss");
         currentImagePath = QString("%1.jpg").arg(timestamp);
-        // 직접 currentImagePath에 저장
-            // 사진 저장
-            cv::imwrite(currentImagePath.toStdString(), frame);
+
+        // 사진 저장
+        bool saved = cv::imwrite(currentImagePath.toStdString(), frame);
+
+        if(!saved) {
+            qDebug() << "Failed to save image to:" << currentImagePath;
+            return;
+        }
 
         // photoEditPage로 이동
         if(!editPage) {
@@ -81,6 +87,30 @@ void main_app::goToExportPage()
     }
 
     exportPage->show();
+    editPage->hide();
+    this->hide();
+}
+
+void main_app::goToExportPageWithImage()
+{
+    if(!exportPage)
+    {
+        exportPage = new export_page();
+    }
+
+    // PhotoEditPage에서 편집된 이미지를 가져와서 export_page에 설정
+    if(editPage) {
+        cv::Mat editedImage = editPage->getCurrentImage();
+        if(!editedImage.empty()) {
+            exportPage->setResultImage(editedImage);
+            qDebug() << "Transferred edited image to export page";
+        } else {
+            qDebug() << "No edited image available to transfer";
+        }
+    }
+
+    exportPage->show();
+    editPage->hide();
     this->hide();
 }
 

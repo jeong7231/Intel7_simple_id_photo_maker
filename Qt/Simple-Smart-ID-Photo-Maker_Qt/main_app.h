@@ -26,6 +26,7 @@ public:
 
 public slots:
     void goToExportPage();
+    void goToExportPageWithImage();
 
 private slots:
     void updateFrame();

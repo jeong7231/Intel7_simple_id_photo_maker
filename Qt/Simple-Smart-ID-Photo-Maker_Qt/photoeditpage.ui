@@ -110,7 +110,7 @@
           </widget>
          </item>
          <item>
-          <widget class="QSlider" name="spot_removal_bar">
+          <widget class="QSlider" name="eye_size_bar">
            <property name="orientation">
             <enum>Qt::Orientation::Horizontal</enum>
            </property>
