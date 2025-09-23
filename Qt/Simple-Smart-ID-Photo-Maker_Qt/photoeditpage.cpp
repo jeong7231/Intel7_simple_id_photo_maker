@@ -774,9 +774,12 @@ cv::Mat PhotoEditPage::overlayPhotoOnBackground(const cv::Mat& photo, const cv::
     // 300x400 배경 이미지 복사
     cv::Mat result = background.clone();
 
+    // @@@@@@@@@@@@@@@@@@@@@@@@@@여기가 사진을 배경보다 작게 만들던 부분@@@@@@@@@@@@@@@@@@@@@@@@@@@@
     // 사진을 배경보다 작게 만들기 (80% 크기로)
     cv::Mat resizedPhoto;
-    cv::Size targetSize(240, 320); // 300x400의 80%
+    // cv::Size targetSize(240, 320); // 300x400의 80%
+    cv::Size targetSize(300, 400);
+    // @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
 
     // 종횡비를 유지하면서 목표 크기에 맞게 리사이즈
     float scaleX = (float)targetSize.width / photo.cols;
