@@ -52,9 +52,7 @@ OpenCV 기반의 스마트 증명사진 제작 도구입니다. 웹캠을 이용
 - **pkg-config**: OpenCV 라이브러리 링크용
 
 ### 지원 플랫폼
-- **Linux**: Ubuntu 18.04+, Fedora, openSUSE
-- **Windows**: Visual Studio 2019+, MinGW
-- **macOS**: Xcode 12+
+- **Linux**: Ubuntu 18.04+
 
 ## 🔧 설치 및 빌드
 
@@ -145,22 +143,3 @@ make run
 - **CPU 사용량**: 알고리즘 반복 횟수 조절 (GrabCut 6회)
 - **실시간 처리**: 카메라 해상도 640x480 고정
 
-## 🤝 기여하기
-
-1. Fork the Project
-2. Create your Feature Branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your Changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the Branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
-
-## 📄 라이센스
-
-이 프로젝트는 MIT 라이센스 하에 배포됩니다. 자세한 내용은 `LICENSE` 파일을 참고하세요.
-
-## 👥 개발팀
-
-인텔 7기 OpenCV 프로젝트 팀
-
----
-
-**📧 문의사항이나 버그 리포트는 Issues 탭을 이용해 주세요.**
