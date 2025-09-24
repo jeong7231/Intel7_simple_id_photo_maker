@@ -1,5 +1,3 @@
-./webcam_to_suit/result/*.png
-
 # Created by https://www.toptal.com/developers/gitignore/api/c++,qt,qtcreator,visualstudiocode,visualstudio,windows,linux
 # Edit at https://www.toptal.com/developers/gitignore?templates=c++,qt,qtcreator,visualstudiocode,visualstudio,windows,linux
 
@@ -562,5 +560,14 @@ FodyWeavers.xsd
 
 ### VisualStudio Patch ###
 # Additional files built by Visual Studio
+
+# Image files
+*.jpg
+*.jpeg
+*.png
+*.svg
+
+# Exception for specific required image
+!image/man_suit_bg_remove.png
 
 # End of https://www.toptal.com/developers/gitignore/api/c++,qt,qtcreator,visualstudiocode,visualstudio,windows,linux
