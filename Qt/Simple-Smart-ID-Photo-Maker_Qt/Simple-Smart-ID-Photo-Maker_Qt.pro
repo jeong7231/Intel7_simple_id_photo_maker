@@ -26,6 +26,7 @@ win32 {
 #DEFINES += QT_DISABLE_DEPRECATED_BEFORE=0x060000    # disables all the APIs deprecated before Qt 6.0.0
 
 SOURCES += \
+    aspectratiolabel.cpp \
     export_page.cpp \
     main.cpp \
     main_app.cpp \
@@ -33,6 +34,7 @@ SOURCES += \
     suitcomposer.cpp
 
 HEADERS += \
+    aspectratiolabel.h \
     export_page.h \
     main_app.h \
     photoeditpage.h \
@@ -49,6 +51,6 @@ CONFIG += lrelease
 CONFIG += embed_translations
 
 # Default rules for deployment.
-qnx: target.path = /tmp/$${TARGET}/bin
-else: unix:!android: target.path = /opt/$${TARGET}/bin
+qnx: target.path = /tmp/${TARGET}/bin
+else: unix:!android: target.path = /opt/${TARGET}/bin
 !isEmpty(target.path): INSTALLS += target

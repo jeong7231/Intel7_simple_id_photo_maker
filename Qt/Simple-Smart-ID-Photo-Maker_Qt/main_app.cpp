@@ -44,6 +44,16 @@ main_app::main_app(QWidget *parent) : QWidget(parent), editPage(nullptr), export
         timer->start(30);
 }
 
+void main_app::resizeEvent(QResizeEvent *event)
+{
+    QWidget::resizeEvent(event);
+    int newWidth = this->width();
+    int newHeight = newWidth * 4 / 3;
+    if (this->height() != newHeight) {
+        this->setFixedHeight(newHeight);
+    }
+}
+
 void main_app::updateFrame()
 {
     if (!camera.isOpened())

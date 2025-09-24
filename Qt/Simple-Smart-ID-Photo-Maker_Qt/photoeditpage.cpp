@@ -654,7 +654,7 @@ void PhotoEditPage::mousePressEvent(QMouseEvent *event)
     if (event->button() == Qt::LeftButton)
     {
         // photoScreen 위젯 내에서의 상대적 위치 계산
-        QPoint globalPos = event->globalPosition().toPoint();
+        QPoint globalPos = event->globalPos();
         QPoint labelGlobalPos = ui->photoScreen->mapToGlobal(QPoint(0, 0));
         QPoint labelPos = globalPos - labelGlobalPos;
 
@@ -710,7 +710,7 @@ void PhotoEditPage::mouseMoveEvent(QMouseEvent *event)
     }
 
     // photoScreen 위젯 내에서의 상대적 위치 계산
-    QPoint globalPos = event->globalPosition().toPoint();
+    QPoint globalPos = event->globalPos();
     QPoint labelGlobalPos = ui->photoScreen->mapToGlobal(QPoint(0, 0));
     QPoint labelPos = globalPos - labelGlobalPos;
 
@@ -774,6 +774,17 @@ void PhotoEditPage::mouseReleaseEvent(QMouseEvent *event)
         drawing = false;
     }
     QWidget::mouseReleaseEvent(event);
+}
+
+void PhotoEditPage::resizeEvent(QResizeEvent *event)
+{
+    QWidget::resizeEvent(event);
+    int newWidth = this->width();
+    int newHeight = newWidth * 4 / 3;
+    if (this->height() != newHeight)
+    {
+        this->setFixedHeight(newHeight);
+    }
 }
 
 void PhotoEditPage::on_teeth_whiten_4_button_clicked(bool checked)

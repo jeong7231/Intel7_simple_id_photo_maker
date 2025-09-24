@@ -20,10 +20,22 @@ export_page::export_page(QWidget *parent) : QWidget(parent), ui(new Ui::export_p
 
 export_page::~export_page() { delete ui; }
 
+void export_page::resizeEvent(QResizeEvent *event)
+{
+    QWidget::resizeEvent(event);
+    int newWidth = this->width();
+    int newHeight = newWidth * 4 / 3;
+    if (this->height() != newHeight)
+    {
+        this->setFixedHeight(newHeight);
+    }
+}
+
 void export_page::setResultImage(const cv::Mat &image)
 {
     if (image.empty())
     {
+        qDebug() << "Cannot set empty image to result screen";
         return;
     }
 
