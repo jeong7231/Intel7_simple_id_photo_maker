@@ -734,6 +734,16 @@ void PhotoEditPage::mouseReleaseEvent(QMouseEvent *event) {
     QWidget::mouseReleaseEvent(event);
 }
 
+void PhotoEditPage::resizeEvent(QResizeEvent *event)
+{
+    QWidget::resizeEvent(event);
+    int newWidth = this->width();
+    int newHeight = newWidth * 4 / 3;
+    if (this->height() != newHeight) {
+        this->setFixedHeight(newHeight);
+    }
+}
+
 
 void PhotoEditPage::on_teeth_whiten_4_button_clicked(bool checked)
 {

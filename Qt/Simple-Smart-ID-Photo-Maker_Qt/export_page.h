@@ -2,6 +2,7 @@
 #define EXPORT_PAGE_H
 
 #include <QWidget>
+#include <QResizeEvent>
 #include <opencv2/opencv.hpp>
 
 namespace Ui {
@@ -16,6 +17,9 @@ public:
     explicit export_page(QWidget *parent = nullptr);
     ~export_page();
     void setResultImage(const cv::Mat& image);
+
+protected:
+    void resizeEvent(QResizeEvent *event) override;
 
 private slots:
     void on_file_format_select_combo_currentTextChanged(const QString &text);

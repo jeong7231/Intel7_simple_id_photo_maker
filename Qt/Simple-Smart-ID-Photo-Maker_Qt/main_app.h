@@ -3,6 +3,7 @@
 
 #include <QWidget>
 #include <QTimer>
+#include <QResizeEvent>
 #include <opencv2/opencv.hpp>
 #include "photoeditpage.h"
 #include "export_page.h"
@@ -28,6 +29,9 @@ class main_app : public QWidget
   public slots:
     void goToExportPage();
     void goToExportPageWithImage();
+
+  protected:
+    void resizeEvent(QResizeEvent *event) override;
 
   private slots:
     void updateFrame();   // 프리뷰만 갱신
