@@ -1,18 +1,13 @@
 #include "main_app.h"
 #include "ui_main_app.h"
-#include <QPixmap>
-#include <QImage>
-#include <QTimer>
 #include <QDateTime>
 #include <QDebug>
 #include <QDir>
+#include <QImage>
+#include <QPixmap>
+#include <QTimer>
 
-main_app::main_app(QWidget *parent)
-    : QWidget(parent)
-      , editPage(nullptr)
-      , exportPage(nullptr)
-      , ui(new Ui::main_app)
-      , timer(new QTimer(this))
+main_app::main_app(QWidget *parent) : QWidget(parent), editPage(nullptr), exportPage(nullptr), ui(new Ui::main_app), timer(new QTimer(this))
 {
     ui->setupUi(this);
 
@@ -30,9 +25,11 @@ main_app::main_app(QWidget *parent)
 
     // 카메라
     camera.open(0, cv::CAP_V4L2);
-    if(!camera.isOpened()) camera.open(0, cv::CAP_ANY);
-    if(camera.isOpened()){
-        camera.set(cv::CAP_PROP_FOURCC, cv::VideoWriter::fourcc('M','J','P','G'));
+    if (!camera.isOpened())
+        camera.open(0, cv::CAP_ANY);
+    if (camera.isOpened())
+    {
+        camera.set(cv::CAP_PROP_FOURCC, cv::VideoWriter::fourcc('M', 'J', 'P', 'G'));
         camera.set(cv::CAP_PROP_FRAME_WIDTH, 640);
         camera.set(cv::CAP_PROP_FRAME_HEIGHT, 480);
     }
@@ -43,15 +40,18 @@ main_app::main_app(QWidget *parent)
     // 촬영 버튼
     connect(ui->takePhotoButton, &QPushButton::clicked, this, &main_app::capturePhoto);
 
-    if(camera.isOpened()) timer->start(30);
+    if (camera.isOpened())
+        timer->start(30);
 }
 
 void main_app::updateFrame()
 {
-    if(!camera.isOpened()) return;
+    if (!camera.isOpened())
+        return;
 
     camera >> lastFrameBGR_;
-    if(lastFrameBGR_.empty()) return;
+    if (lastFrameBGR_.empty())
+        return;
 
     // 수트 가이드를 포함한 프리뷰(BGR)
     cv::Mat prevBGR = comp_.makePreviewBGR(lastFrameBGR_);
@@ -65,10 +65,13 @@ void main_app::updateFrame()
 
 void main_app::capturePhoto()
 {
-    if(lastFrameBGR_.empty()){
-        if(!camera.isOpened()) return;
+    if (lastFrameBGR_.empty())
+    {
+        if (!camera.isOpened())
+            return;
         camera >> lastFrameBGR_;
-        if(lastFrameBGR_.empty()) return;
+        if (lastFrameBGR_.empty())
+            return;
     }
 
     // 수트 ⊕ 얼굴 합성 + 배경색 적용된 BGR 이미지
@@ -85,7 +88,8 @@ void main_app::capturePhoto()
     qDebug() << "Captured photo with background color applied:" << currentImagePath;
 
     // 편집 페이지로 이동
-    if(!editPage) {
+    if (!editPage)
+    {
         editPage = new PhotoEditPage();
         editPage->setMainApp(this);
     }
@@ -96,7 +100,8 @@ void main_app::capturePhoto()
 
 void main_app::goToExportPage()
 {
-    if(!exportPage) exportPage = new export_page();
+    if (!exportPage)
+        exportPage = new export_page();
     exportPage->show();
     editPage->hide();
     this->hide();
@@ -104,18 +109,22 @@ void main_app::goToExportPage()
 
 void main_app::goToExportPageWithImage()
 {
-    if(!exportPage)
+    if (!exportPage)
     {
         exportPage = new export_page();
     }
 
     // PhotoEditPage에서 편집된 이미지를 가져와서 export_page에 설정
-    if(editPage) {
+    if (editPage)
+    {
         cv::Mat editedImage = editPage->getCurrentImage();
-        if(!editedImage.empty()) {
+        if (!editedImage.empty())
+        {
             exportPage->setResultImage(editedImage);
             qDebug() << "Transferred edited image to export page";
-        } else {
+        }
+        else
+        {
             qDebug() << "No edited image available to transfer";
         }
     }
@@ -128,23 +137,27 @@ void main_app::goToExportPageWithImage()
 void main_app::on_colorSelect_currentTextChanged(const QString &text)
 {
     // 선택된 색상에 따라 배경색 설정 (BGR 순서)
-    if (text == "흰색") {
+    if (text == "흰색")
+    {
         selectedBackgroundColor = cv::Scalar(255, 255, 255);
-    } else if (text == "파란색") {
+    }
+    else if (text == "파란색")
+    {
         selectedBackgroundColor = cv::Scalar(255, 0, 0);
-    } else if (text == "빨간색") {
+    }
+    else if (text == "빨간색")
+    {
         selectedBackgroundColor = cv::Scalar(0, 0, 255);
-    } else if (text == "회색") {
+    }
+    else if (text == "회색")
+    {
         selectedBackgroundColor = cv::Scalar(128, 128, 128);
     }
 
     // SuitComposer에 배경색 적용
     comp_.setBackgroundColor(selectedBackgroundColor);
 
-    qDebug() << "Background color changed to:" << text
-             << "BGR(" << selectedBackgroundColor[0] << ","
-             << selectedBackgroundColor[1] << ","
-             << selectedBackgroundColor[2] << ")";
+    qDebug() << "Background color changed to:" << text << "BGR(" << selectedBackgroundColor[0] << "," << selectedBackgroundColor[1] << "," << selectedBackgroundColor[2] << ")";
 }
 
 main_app::~main_app()

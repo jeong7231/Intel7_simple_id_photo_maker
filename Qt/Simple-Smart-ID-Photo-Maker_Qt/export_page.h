@@ -4,7 +4,8 @@
 #include <QWidget>
 #include <opencv2/opencv.hpp>
 
-namespace Ui {
+namespace Ui
+{
 class export_page;
 }
 
@@ -12,20 +13,20 @@ class export_page : public QWidget
 {
     Q_OBJECT
 
-public:
+  public:
     explicit export_page(QWidget *parent = nullptr);
     ~export_page();
-    void setResultImage(const cv::Mat& image);
+    void setResultImage(const cv::Mat &image);
 
-private slots:
+  private slots:
     void on_file_format_select_combo_currentTextChanged(const QString &text);
     void on_export_button_clicked();
 
-private:
+  private:
     Ui::export_page *ui;
     cv::Mat resultImage;
     QString selectedFormat;
-    QString generateUniqueFileName(const QString& baseName, const QString& extension);
+    QString generateUniqueFileName(const QString &baseName, const QString &extension);
 };
 
 #endif // EXPORT_PAGE_H
