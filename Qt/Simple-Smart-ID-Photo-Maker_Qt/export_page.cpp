@@ -1,6 +1,5 @@
 #include "export_page.h"
 #include "ui_export_page.h"
-#include <QDebug>
 #include <QDir>
 #include <QFile>
 #include <QFileDialog>
@@ -25,7 +24,6 @@ void export_page::setResultImage(const cv::Mat &image)
 {
     if (image.empty())
     {
-        qDebug() << "Cannot set empty image to result screen";
         return;
     }
 
@@ -52,15 +50,9 @@ void export_page::setResultImage(const cv::Mat &image)
     // resultPhotoScreen에 이미지 표시
     ui->resultPhotoScreen->setPixmap(pixmap);
     ui->resultPhotoScreen->setScaledContents(true);
-
-    qDebug() << "Result image set to export page with size:" << image.cols << "x" << image.rows;
 }
 
-void export_page::on_file_format_select_combo_currentTextChanged(const QString &text)
-{
-    selectedFormat = text.toLower();
-    qDebug() << "Selected file format:" << selectedFormat;
-}
+void export_page::on_file_format_select_combo_currentTextChanged(const QString &text) { selectedFormat = text.toLower(); }
 
 QString export_page::generateUniqueFileName(const QString &baseName, const QString &extension)
 {
@@ -91,7 +83,6 @@ void export_page::on_export_button_clicked()
     if (resultImage.empty())
     {
         QMessageBox::warning(this, "경고", "저장할 이미지가 없습니다.");
-        qDebug() << "No image to export";
         return;
     }
 
@@ -99,21 +90,15 @@ void export_page::on_export_button_clicked()
     QString fileName = generateUniqueFileName("result", selectedFormat);
     QString filePath = QDir::currentPath() + "/" + fileName;
 
-    qDebug() << "Attempting to save image as:" << filePath;
-    qDebug() << "Image format:" << selectedFormat;
-    qDebug() << "Image size:" << resultImage.cols << "x" << resultImage.rows;
-
     // OpenCV로 이미지 저장
     bool success = cv::imwrite(filePath.toStdString(), resultImage);
 
     if (success)
     {
         QMessageBox::information(this, "저장 완료", QString("이미지가 성공적으로 저장되었습니다:\n%1").arg(filePath));
-        qDebug() << "Image saved successfully:" << filePath;
     }
     else
     {
         QMessageBox::critical(this, "저장 실패", QString("이미지 저장에 실패했습니다:\n%1").arg(filePath));
-        qDebug() << "Failed to save image:" << filePath;
     }
 }

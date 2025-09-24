@@ -288,7 +288,6 @@ int main()
     original_image = imread("/home/ubuntu/opencv/Intel7_simple_id_photo_maker/jinsu/face.jpeg");
     if (original_image.empty())
     {
-        cout << "이미지를 불러올 수 없습니다." << endl;
         return -1;
     }
 
@@ -301,7 +300,6 @@ int main()
 
     if (!face_cascade.load("/home/ubuntu/opencv/Intel7_simple_id_photo_maker/jinsu/haarcascade_frontalface_default.xml") || !eye_cascade.load("/home/ubuntu/opencv/Intel7_simple_id_photo_maker/jinsu/haarcascade_eye_tree_eyeglasses.xml"))
     {
-        cout << "분류기 파일을 찾을 수 없습니다." << endl;
         return -1;
     }
 
@@ -332,8 +330,6 @@ int main()
     createTrackbar("흑백", "증명사진 보정", &bw_on, 1, on_trackbar);
 
     on_trackbar(0, 0);
-
-    cout << "\n사용법: 트랙바 조절, 마우스로 잡티 제거, r키로 리셋, q/ESC로 종료" << endl;
 
     while (true)
     {

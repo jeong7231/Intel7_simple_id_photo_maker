@@ -85,8 +85,6 @@ void main_app::capturePhoto()
     // JPG BGR 저장
     cv::imwrite(currentImagePath.toStdString(), outBGR, {cv::IMWRITE_JPEG_QUALITY, 95});
 
-    qDebug() << "Captured photo with background color applied:" << currentImagePath;
-
     // 편집 페이지로 이동
     if (!editPage)
     {
@@ -121,11 +119,9 @@ void main_app::goToExportPageWithImage()
         if (!editedImage.empty())
         {
             exportPage->setResultImage(editedImage);
-            qDebug() << "Transferred edited image to export page";
         }
         else
         {
-            qDebug() << "No edited image available to transfer";
         }
     }
 
@@ -156,8 +152,6 @@ void main_app::on_colorSelect_currentTextChanged(const QString &text)
 
     // SuitComposer에 배경색 적용
     comp_.setBackgroundColor(selectedBackgroundColor);
-
-    qDebug() << "Background color changed to:" << text << "BGR(" << selectedBackgroundColor[0] << "," << selectedBackgroundColor[1] << "," << selectedBackgroundColor[2] << ")";
 }
 
 main_app::~main_app()
