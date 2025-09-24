@@ -1,6 +1,7 @@
 # Created by https://www.toptal.com/developers/gitignore/api/c++,qt,qtcreator,visualstudiocode,visualstudio,windows,linux
 # Edit at https://www.toptal.com/developers/gitignore?templates=c++,qt,qtcreator,visualstudiocode,visualstudio,windows,linux
 
+./Qt/Simple-Smart-ID-Photo-Maker_Qt/build/*
 ### C++ ###
 # Prerequisites
 *.d
