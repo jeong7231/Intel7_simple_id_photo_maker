@@ -933,11 +933,15 @@ void PhotoEditPage::on_init_button_clicked()
     currentBackgroundColor = cv::Scalar(255, 255, 255); // 화이트 (BGR)
     createBackgroundWithColor(currentBackgroundColor);
 
-    // 원본 이미지가 있으면 currentImage를 원본으로 복원하고 표시
+    // 마우스 커서를 기본 상태로 복원
+    ui->photoScreen->setCursor(Qt::ArrowCursor);
+
+    // 원본 이미지가 있으면 currentImage와 spotSmoothImage를 원본으로 복원하고 표시
     if (!originalImage.empty())
     {
         // 원본 이미지로 복원 중...
         currentImage = originalImage.clone();
+        spotSmoothImage = originalImage.clone(); // 잡티 제거/치아 미백 효과도 초기화
         applyAllEffects(); // 초기화된 상태로 효과 적용 (실제로는 효과 없음)
     }
     else
