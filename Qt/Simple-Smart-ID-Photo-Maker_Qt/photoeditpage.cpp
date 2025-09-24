@@ -654,7 +654,12 @@ void PhotoEditPage::mousePressEvent(QMouseEvent *event)
     if (event->button() == Qt::LeftButton)
     {
         // photoScreen 위젯 내에서의 상대적 위치 계산
+        // QPoint globalPos = event->globalPos();
+#if QT_VERSION >= QT_VERSION_CHECK(6,0,0)
+        QPoint globalPos = event->globalPosition().toPoint();
+#else
         QPoint globalPos = event->globalPos();
+#endif
         QPoint labelGlobalPos = ui->photoScreen->mapToGlobal(QPoint(0, 0));
         QPoint labelPos = globalPos - labelGlobalPos;
 
@@ -710,7 +715,12 @@ void PhotoEditPage::mouseMoveEvent(QMouseEvent *event)
     }
 
     // photoScreen 위젯 내에서의 상대적 위치 계산
+    // QPoint globalPos = event->globalPos();
+#if QT_VERSION >= QT_VERSION_CHECK(6,0,0)
+    QPoint globalPos = event->globalPosition().toPoint();
+#else
     QPoint globalPos = event->globalPos();
+#endif
     QPoint labelGlobalPos = ui->photoScreen->mapToGlobal(QPoint(0, 0));
     QPoint labelPos = globalPos - labelGlobalPos;
 
