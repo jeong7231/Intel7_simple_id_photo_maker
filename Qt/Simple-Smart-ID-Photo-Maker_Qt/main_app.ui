@@ -17,7 +17,7 @@
    <item>
     <layout class="QVBoxLayout" name="verticalLayout" stretch="9,1">
      <item>
-      <widget class="QLabel" name="camScreen">
+      <widget class="AspectRatioLabel" name="camScreen">
        <property name="text">
         <string>TextLabel</string>
        </property>
@@ -65,6 +65,13 @@
    </item>
   </layout>
  </widget>
+ <customwidgets>
+  <customwidget>
+   <class>AspectRatioLabel</class>
+   <extends>QLabel</extends>
+   <header>aspectratiolabel.h</header>
+  </customwidget>
+ </customwidgets>
  <resources/>
  <connections/>
 </ui>
